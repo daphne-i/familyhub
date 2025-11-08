@@ -7,9 +7,9 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:650977511622:android:11d8c27f5ccdd46eaaefc7",
+        "mobilesdk_app_id": "1:650977511622:android:5b01e629fc2dc63caaefc7",
         "android_client_info": {
-          "package_name": "com.company.daphhome"
+          "package_name": "com.familyhubapp"
         }
       },
       "oauth_client": [],
