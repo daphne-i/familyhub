@@ -1,67 +1,42 @@
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';
+import { useFamily } from '../hooks/useFamily'; // Using the clean hook path
 import SplashScreen from '../screens/Common/SplashScreen';
 import AuthStack from './AuthStack';
 import OnboardingStack from './OnboardingStack';
 import MainAppTabs from './MainAppTabs';
 import { StatusBar } from 'react-native';
 
-// --- MOCK NAVIGATION STATE ---
-// Change these values to test different navigation flows.
-//
-// 1. To test "Signed Out" (AuthStack):
-//    const mockUser = null;
-//    const mockFamilyId = null;
-//    const mockLoading = false;
-//
-// 2. To test "Signed In, No Family" (OnboardingStack):
-//    const mockUser = { uid: 'fake-user-id' };
-//    const mockFamilyId = null;
-//    const mockLoading = false;
-//
-// 3. To test "Signed In, With Family" (MainAppTabs):
-   const mockUser = { uid: 'fake-user-id' };
-   const mockFamilyId = 'fake-family-id';
-   const mockLoading = false;
-//
-// 4. To test "Loading" (SplashScreen):
-//    const mockUser = null;
-//    const mockFamilyId = null;
-//    const mockLoading = true;
-//
-// -----------------------------
-
+// This is the "Brain" of the app, as per section 3.0
+// All mocks are removed. This is the final production logic.
 const RootNavigator = () => {
-  // We comment out the *real* hook for now
-  // const { user, loading } = useAuth();
-  
-  // And use our mock values instead
-  const user = mockUser;
-  const familyId = mockFamilyId;
-  const loading = mockLoading;
+  const { user, loading: loadingAuth } = useAuth();
+  const { familyId, loadingFamily } = useFamily();
 
-  // This is the full navigation logic from Section 3.0
+  // Show splash screen if either auth state or family state is loading
+  if (loadingAuth || loadingFamily) {
+    return <SplashScreen />;
+  }
+
+  // Render logic from Section 3.0 of your design doc
   const renderNavigator = () => {
-    if (loading) {
-      return <SplashScreen />;
-    }
-    
     if (!user) {
+      // 1. User is null: Show AuthStack
       return <AuthStack />;
     }
     
-    // This is the logic we will *really* implement next
-    // using the FamilyContext
     if (user && !familyId) {
+      // 2. User exists but familyId is null: Show OnboardingStack
       return <OnboardingStack />;
     }
     
     if (user && familyId) {
+      // 3. User and familyId exist: Show MainAppTabs
       return <MainAppTabs />;
     }
-    
-    // Default fallback
+
+    // Default fallback (shouldn't be reached)
     return <AuthStack />;
   };
 

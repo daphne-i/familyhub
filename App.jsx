@@ -1,15 +1,18 @@
 import React from 'react';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AuthProvider } from './src/contexts/AuthContext';
+import { FamilyProvider } from './src/contexts/FamilyContext';
 import RootNavigator from './src/navigation/RootNavigator';
 
 const App = () => {
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <AuthProvider>
+    <AuthProvider>
+      {/* Wrap FamilyProvider INSIDE AuthProvider.
+        This is critical so FamilyContext can use the useAuth() hook.
+      */}
+      <FamilyProvider>
         <RootNavigator />
-      </AuthProvider>
-    </GestureHandlerRootView>
+      </FamilyProvider>
+    </AuthProvider>
   );
 };
 
