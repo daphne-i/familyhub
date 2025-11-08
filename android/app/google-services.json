@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "650977511622",
+    "project_id": "family-hub-4063d",
+    "storage_bucket": "family-hub-4063d.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:650977511622:android:11d8c27f5ccdd46eaaefc7",
+        "android_client_info": {
+          "package_name": "com.company.daphhome"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCnRAo9wUEwsRu5VuWOGf3VSxXGCmoawks"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
