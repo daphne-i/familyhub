@@ -4,15 +4,14 @@ import { Home, LayoutGrid } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import DashboardScreen from '../screens/Dashboard/DashboardScreen';
-import HubScreen from '../screens/Hub/HubScreen';
+// 1. IMPORT THE NEW HUBSTACK
+import HubStack from './HubStack';
 import * as theme from '../utils/theme';
 
 const { COLORS, FONT_SIZES, SPACING } = theme;
 const Tab = createBottomTabNavigator();
 
-// --- ESLINT FIX ---
-// We define the icon components *outside* the MainAppTabs component.
-// This prevents them from being recreated on every render.
+// --- We define the icon components *outside* the MainAppTabs component ---
 const renderDashboardIcon = ({ color, size }) => (
   <Home size={size} color={color} strokeWidth={2.5} />
 );
@@ -20,7 +19,6 @@ const renderDashboardIcon = ({ color, size }) => (
 const renderHubIcon = ({ color, size }) => (
   <LayoutGrid size={size} color={color} strokeWidth={2.5} />
 );
-// --- END FIX ---
 
 const MainAppTabs = () => {
   const insets = useSafeAreaInsets();
@@ -50,16 +48,15 @@ const MainAppTabs = () => {
         component={DashboardScreen}
         options={{
           tabBarLabel: 'Dashboard',
-          // Reference the stable function
           tabBarIcon: renderDashboardIcon,
         }}
       />
       <Tab.Screen
         name="Hub"
-        component={HubScreen}
+        // 2. USE THE HUBSTACK (not HubScreen)
+        component={HubStack}
         options={{
           tabBarLabel: 'Hub',
-          // Reference the stable function
           tabBarIcon: renderHubIcon,
         }}
       />

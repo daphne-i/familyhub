@@ -7,125 +7,121 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
 import {
-  Settings,
-  ChevronDown,
   List,
   CalendarDays,
-  PiggyBank,
+  CreditCard,
   Folder,
-  Salad,
-  CookingPot,
+  Utensils, // Changed from Salad
+  Soup, // Changed from BookOpen
+  Settings,
+  ChevronDown,
   User,
 } from 'lucide-react-native';
+import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../../contexts/AuthContext';
-// We don't have useFamily yet, but we will soon.
-// For now, we'll just use the user's name.
 import * as theme from '../../utils/theme';
 
-const { COLORS, FONT_SIZES, SPACING, RADII, FONTS } = theme;
+const { COLORS, FONT_SIZES, SPACING, RADII } = theme;
 
-// Helper component for the user avatar
-const UserAvatar = () => (
-  <View style={styles.avatarContainer}>
-    <User size={FONT_SIZES.lg} color={COLORS.primary} />
-  </View>
-);
-
-// Re-usable Tile Component
-const FeatureTile = ({ title, subtitle, icon, onPress, color = COLORS.primary }) => (
+// Reusable Tile Component
+const HubTile = ({ title, subtitle, icon, iconBgColor, onPress }) => (
   <TouchableOpacity style={styles.tile} onPress={onPress}>
-    <View style={styles.tileHeader}>
-      <Text style={styles.tileTitle}>{title}</Text>
-      <View style={[styles.tileIconContainer, { backgroundColor: `${color}20` }]}>
-        {icon}
-      </View>
+    <View style={[styles.iconContainer, { backgroundColor: iconBgColor || COLORS.border }]}>
+      {icon}
     </View>
-    <Text style={styles.tileSubtitle}>{subtitle}</Text>
+    <View>
+      <Text style={styles.tileTitle}>{title}</Text>
+      <Text style={styles.tileSubtitle}>{subtitle}</Text>
+    </View>
   </TouchableOpacity>
 );
 
-const HubScreen = () => {
+// Custom Header
+const HubHeader = ({ onSettingsPress }) => {
+  const { user } = useAuth();
   const insets = useSafeAreaInsets();
-  const navigation = useNavigation();
-  const { user } = useAuth(); // Get user data
-
-  // Placeholder navigation
-  const goTo = (screen) => {
-    // In the future, this will be: navigation.push(screen)
-    console.log(`Maps to ${screen}`);
-  };
 
   return (
-    <View style={[styles.container, { backgroundColor: COLORS.background_white }]}>
-      {/* === Custom Header (as per Section 5.2) === */}
-      <View style={[styles.header, { paddingTop: insets.top + SPACING.md }]}>
-        <TouchableOpacity style={styles.headerUser}>
-          <UserAvatar />
-          <Text style={styles.headerTitle}>
-            {user?.displayName || 'Family'}
-          </Text>
-          <ChevronDown size={FONT_SIZES.lg} color={COLORS.text} />
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => goTo('Settings')}>
-          <Settings size={FONT_SIZES.xl} color={COLORS.text} />
+    <View style={[styles.header, { paddingTop: insets.top + SPACING.sm }]}>
+      <View style={styles.headerLeft}>
+        <View style={styles.avatarContainer}>
+          <User size={FONT_SIZES.lg} color={COLORS.primary} />
+        </View>
+        <TouchableOpacity style={styles.nameContainer}>
+          <Text style={styles.nameText}>{user?.displayName || 'Family'}</Text>
+          <ChevronDown size={FONT_SIZES.md} color={COLORS.text_light} />
         </TouchableOpacity>
       </View>
+      <TouchableOpacity onPress={onSettingsPress} style={styles.settingsButton}>
+        <Settings size={24} color={COLORS.text_dark} />
+      </TouchableOpacity>
+    </View>
+  );
+};
 
-      {/* === Feature Grid === */}
+const HubScreen = () => {
+  const navigation = useNavigation();
+
+  return (
+    <View style={styles.container}>
+      <HubHeader onSettingsPress={() => navigation.push('Settings')} />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}>
-        <View style={styles.tileGrid}>
+        <View style={styles.grid}>
           {/* Lists */}
-          <FeatureTile
+          <HubTile
             title="Lists"
-            subtitle="2 lists" // Static data for now
-            icon={<List size={24} color={COLORS.primary} />}
-            onPress={() => goTo('Lists')}
-            color={COLORS.primary}
+            subtitle="2 lists" // static
+            icon={<List size={30} color={COLORS.primary} />}
+            iconBgColor={COLORS.primary_light}
+            onPress={() => navigation.push('Lists')}
           />
           {/* Calendar */}
-          <FeatureTile
+          <HubTile
             title="Calendar"
-            subtitle="2 events today" // Static data
-            icon={<CalendarDays size={24} color={COLORS.green} />}
-            onPress={() => goTo('Calendar')}
-            color={COLORS.green}
+            subtitle="2 events today" // static
+            icon={<CalendarDays size={30} color={COLORS.green} />}
+            iconBgColor={COLORS.green_light}
+            onPress={() => navigation.push('Calendar')}
           />
           {/* Budget */}
-          <FeatureTile
+          <HubTile
             title="Budget"
             subtitle="Manage your Budgets"
-            icon={<PiggyBank size={24} color={COLORS.purple} />}
-            onPress={() => goTo('Budget')}
-            color={COLORS.purple}
+            icon={<CreditCard size={30} color={COLORS.purple} />}
+            iconBgColor={COLORS.purple_light}
+            onPress={() => navigation.push('Budget')}
           />
           {/* Documents */}
-          <FeatureTile
+          <HubTile
             title="Documents"
-            subtitle="4 folders 1 file" // Static data
-            icon={<Folder size={24} color={COLORS.orange} />}
-            onPress={() => goTo('Documents')}
-            color={COLORS.orange}
+            subtitle="4 folders 1 file" // static
+            icon={<Folder size={30} color={COLORS.orange} />}
+            iconBgColor={COLORS.orange_light}
+            onPress={() => navigation.push('Documents')}
           />
+
+          {/* === FIX IS HERE === */}
           {/* Meals */}
-          <FeatureTile
+          <HubTile
             title="Meals"
-            subtitle="1 meal this week" // Static data
-            icon={<Salad size={24} color={COLORS.primary} />}
-            onPress={() => goTo('MealPlanner')}
-            color={COLORS.primary}
+            subtitle="1 meal this week" // static
+            icon={<Utensils size={30} color={COLORS.blue} />}
+            iconBgColor={COLORS.blue_light}
+            onPress={() => navigation.push('MealPlanner')}
           />
           {/* Recipes */}
-          <FeatureTile
+          <HubTile
             title="Recipes"
-            subtitle="7 recipes" // Static data
-            icon={<CookingPot size={24} color={COLORS.orange} />}
-            onPress={() => goTo('RecipeBox')}
-            color={COLORS.orange}
+            subtitle="7 recipes" // static
+            icon={<Soup size={30} color={COLORS.orange} />}
+            iconBgColor={COLORS.orange_light}
+            onPress={() => navigation.push('RecipeBox')}
           />
+          {/* === END FIX === */}
+
         </View>
       </ScrollView>
     </View>
@@ -135,6 +131,10 @@ const HubScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: COLORS.background,
+  },
+  scrollContent: {
+    padding: SPACING.lg,
   },
   // --- Header ---
   header: {
@@ -143,11 +143,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: SPACING.lg,
     paddingBottom: SPACING.md,
-    backgroundColor: COLORS.background_white,
+    backgroundColor: COLORS.white,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
-  headerUser: {
+  headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
   },
@@ -158,52 +158,56 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary_light,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: SPACING.sm,
   },
-  headerTitle: {
+  nameContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: SPACING.md,
+  },
+  nameText: {
     fontSize: FONT_SIZES.lg,
     fontWeight: 'bold',
     color: COLORS.text_dark,
     marginRight: SPACING.xs,
   },
-  // --- Grid ---
-  scrollContent: {
-    padding: SPACING.lg,
+  settingsButton: {
+    padding: SPACING.xs,
   },
-  tileGrid: {
+  // --- Grid ---
+  grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
   },
-  // --- Tile ---
   tile: {
     width: '48%',
-    backgroundColor: COLORS.background_light,
+    backgroundColor: COLORS.white,
     borderRadius: RADII.lg,
-    padding: SPACING.lg,
+    padding: SPACING.md,
     marginBottom: SPACING.lg,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
   },
-  tileHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
+  iconContainer: {
+    width: 50,
+    height: 50,
+    borderRadius: RADII.md,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: SPACING.lg,
   },
   tileTitle: {
-    fontSize: FONT_SIZES.lg,
+    fontSize: FONT_SIZES.md,
     fontWeight: 'bold',
     color: COLORS.text_dark,
     marginBottom: SPACING.xs,
   },
-  tileIconContainer: {
-    padding: SPACING.sm,
-    borderRadius: RADII.full,
-  },
   tileSubtitle: {
-    fontSize: FONT_SIZES.base,
+    fontSize: FONT_SIZES.sm,
     color: COLORS.text_light,
-    marginTop: SPACING.xl,
   },
 });
 
