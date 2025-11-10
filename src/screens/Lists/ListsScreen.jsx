@@ -1,82 +1,126 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   TouchableOpacity,
+  FlatList,
+  ActivityIndicator,
   Dimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { ArrowLeft, MoreHorizontal, Plus } from 'lucide-react-native';
 import * as theme from '../../utils/theme';
+import { useFamilyCollection } from '../../services/firestore';
 
 const { COLORS, FONT_SIZES, SPACING, RADII } = theme;
 const { width } = Dimensions.get('window');
-const TILE_WIDTH = (width - SPACING.lg * 3) / 2;
+const cardSize = (width - SPACING.lg * 3) / 2;
 
-// Re-usable List Tile Component
-const ListCard = ({ title, subtitle, icon, onPress, color, iconBg }) => (
-  <TouchableOpacity
-    style={[styles.tile, { backgroundColor: color }]}
-    onPress={onPress}>
-    <View style={styles.tileIconContainer}>
-      {/* This is a placeholder for the image/icon in your screenshot */}
-      <View style={[styles.tileIcon, { backgroundColor: iconBg }]}>
-        <Text style={styles.tileIconText}>{icon}</Text>
-      </View>
-    </View>
-    <Text style={styles.tileTitle}>{title}</Text>
-    <Text style={styles.tileSubtitle}>{subtitle}</Text>
-  </TouchableOpacity>
-);
+// --- Components ---
 
-const ListsScreen = () => {
+const ListHeader = () => {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
+  return (
+    <View style={[styles.header, { paddingTop: insets.top }]}>
+      <TouchableOpacity
+        style={styles.headerButton}
+        onPress={() => navigation.goBack()}>
+        <ArrowLeft size={FONT_SIZES.xl} color={COLORS.text_dark} />
+      </TouchableOpacity>
+      <Text style={styles.headerTitle}>Lists</Text>
+      <TouchableOpacity style={styles.headerButton}>
+        <MoreHorizontal size={FONT_SIZES.xl} color={COLORS.text_dark} />
+      </TouchableOpacity>
+    </View>
+  );
+};
+
+const ListCard = ({ list, onPress }) => {
+  const cardColor =
+    list.type === 'shopping' ? COLORS.primary_light : COLORS.green_light;
+  const cardIcon = list.type === 'shopping' ? '🛍️' : '📋';
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* === Custom Header === */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.headerButton}
-          onPress={() => navigation.goBack()}>
-          <ArrowLeft size={FONT_SIZES.xl} color={COLORS.text_dark} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Lists</Text>
-        <TouchableOpacity style={styles.headerButton}>
-          <MoreHorizontal size={FONT_SIZES.xl} color={COLORS.text_dark} />
-        </TouchableOpacity>
-      </View>
+    <TouchableOpacity
+      style={[styles.card, { backgroundColor: cardColor }]}
+      onPress={onPress}>
+      <Text style={styles.cardTitle}>{list.name}</Text>
+      <Text style={styles.cardSubtitle}>{list.itemCount || 0} items</Text>
+      <Text style={styles.cardIcon}>{cardIcon}</Text>
+    </TouchableOpacity>
+  );
+};
 
-      {/* === List Grid === */}
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.tileGrid}>
-          {/* Shopping List */}
-          <ListCard
-            title="Shopping"
-            subtitle="19 items"
-            icon="🛍️" // Placeholder icon
-            color={COLORS.primary_light}
-            iconBg="rgba(255,255,255,0.4)"
-            onPress={() => navigation.push('ListDetail')}
-          />
-          {/* To Do's List */}
-          <ListCard
-            title="To Do's"
-            subtitle="2 items"
-            icon="📋" // Placeholder icon
-            color={COLORS.green_light}
-            iconBg="rgba(255,255,255,0.4)"
-            onPress={() => navigation.push('ListDetail')}
-          />
+// --- Main Screen ---
+
+const ListsScreen = () => {
+  const navigation = useNavigation();
+  const { data: lists, loading, error } = useFamilyCollection('lists');
+
+  // Sort the data so it's stable
+  const sortedLists = useMemo(() => {
+    return lists.sort((a, b) => {
+      if (!a.createdAt || !b.createdAt) return 0;
+      return a.createdAt.toDate() - b.createdAt.toDate();
+    });
+  }, [lists]);
+
+  const renderContent = () => {
+    if (loading) {
+      return (
+        <View style={styles.centered}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
         </View>
-      </ScrollView>
+      );
+    }
 
+    if (error) {
+      return (
+        <View style={styles.centered}>
+          <Text style={styles.errorText}>Error loading lists.</Text>
+        </View>
+      );
+    }
+
+    return (
+      <FlatList
+        data={sortedLists}
+        renderItem={({ item }) => (
+          <ListCard
+            list={item}
+            onPress={() =>
+              navigation.push('ListDetail', {
+                listId: item.id,
+                listName: item.name,
+                listType: item.type,
+              })
+            }
+          />
+        )}
+        keyExtractor={(item) => item.id}
+        numColumns={2}
+        contentContainerStyle={styles.listContent}
+        ListEmptyComponent={
+          <View style={styles.centered}>
+            <Text style={styles.emptyText}>No lists created yet.</Text>
+            <Text style={styles.emptyText}>Tap the + to add one!</Text>
+          </View>
+        }
+      />
+    );
+  };
+
+  return (
+    <View style={styles.container}>
+      <ListHeader />
+      {renderContent()}
       {/* === FAB === */}
-      <TouchableOpacity style={styles.fab}>
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={() => navigation.navigate('AddList')}>
         <Plus size={30} color={COLORS.white} />
       </TouchableOpacity>
     </View>
@@ -94,7 +138,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.md,
+    paddingBottom: SPACING.md,
+    backgroundColor: COLORS.white,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
@@ -102,49 +147,34 @@ const styles = StyleSheet.create({
     padding: SPACING.xs,
   },
   headerTitle: {
-    fontSize: FONT_SIZES.lg,
+    fontSize: FONT_SIZES.xl,
     fontWeight: 'bold',
     color: COLORS.text_dark,
   },
-  // --- Grid ---
-  scrollContent: {
+  // --- List ---
+  listContent: {
     padding: SPACING.lg,
   },
-  tileGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+  card: {
+    width: cardSize,
+    height: cardSize,
+    borderRadius: RADII.lg,
+    padding: SPACING.lg,
+    margin: SPACING.sm / 2,
     justifyContent: 'space-between',
   },
-  // --- Tile ---
-  tile: {
-    width: TILE_WIDTH,
-    height: TILE_WIDTH * 1.1, // Make them slightly taller
-    borderRadius: RADII.lg,
-    padding: SPACING.lg,
-    marginBottom: SPACING.lg,
-  },
-  tileIconContainer: {
-    flex: 1,
-    alignItems: 'flex-end',
-  },
-  tileIcon: {
-    width: 60,
-    height: 60,
-    borderRadius: RADII.lg,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  tileIconText: {
-    fontSize: 30, // Emoji size
-  },
-  tileTitle: {
+  cardTitle: {
     fontSize: FONT_SIZES.lg,
     fontWeight: 'bold',
     color: COLORS.text_dark,
   },
-  tileSubtitle: {
-    fontSize: FONT_SIZES.base,
+  cardSubtitle: {
+    fontSize: FONT_SIZES.md,
     color: COLORS.text,
+  },
+  cardIcon: {
+    fontSize: 40,
+    alignSelf: 'flex-end',
   },
   // --- FAB ---
   fab: {
@@ -162,6 +192,22 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
+  },
+  // --- Loading/Error States ---
+  centered: {
+    flex: 1,
+    height: width, // Make it take up significant space
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  errorText: {
+    fontSize: FONT_SIZES.md,
+    color: COLORS.text_danger,
+  },
+  emptyText: {
+    fontSize: FONT_SIZES.md,
+    color: COLORS.text_light,
+    textAlign: 'center',
   },
 });
 
