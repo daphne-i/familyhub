@@ -6,12 +6,12 @@ import {
   TouchableOpacity,
   SectionList,
   ActivityIndicator,
+  Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import {
   ArrowLeft,
-  Lock,
   MoreHorizontal,
   Plus,
   ChevronDown,
@@ -20,9 +20,14 @@ import {
   Square,
   Calendar,
   Repeat,
+  RefreshCw,
+  EyeOff,
+  Eye,
+  Check,
+  X as XIcon,
 } from 'lucide-react-native';
 import * as theme from '../../utils/theme';
-import { useFamilyCollection, updateListItem } from '../../services/firestore';
+import { useFamilyCollection, updateListItem, deleteListItem } from '../../services/firestore';
 import {
   SHOPPING_CATEGORIES,
   TODO_DEFAULT_CATEGORIES,
@@ -34,7 +39,7 @@ const { COLORS, FONT_SIZES, SPACING, RADII } = theme;
 
 // --- Components ---
 
-const CustomHeader = ({ listName, listColor, listIcon }) => {
+const CustomHeader = ({ listName, listColor, listIcon, onMenuPress }) => {
   // ... (This component remains the same)
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
@@ -53,10 +58,7 @@ const CustomHeader = ({ listName, listColor, listIcon }) => {
         <Text style={styles.headerTitle}>{listName}</Text>
         <Text style={styles.headerIcon}>{listIcon}</Text>
       </View>
-      <TouchableOpacity style={styles.headerButton}>
-        <Lock size={FONT_SIZES.lg} color={COLORS.text_dark} />
-      </TouchableOpacity>
-      <TouchableOpacity style={styles.headerButton}>
+      <TouchableOpacity style={styles.headerButton} onPress={onMenuPress}>
         <MoreHorizontal size={FONT_SIZES.xl} color={COLORS.text_dark} />
       </TouchableOpacity>
     </View>
@@ -131,13 +133,25 @@ const ListItem = ({ item, onToggle, onPress }) => {
       </TouchableOpacity>
 
       <TouchableOpacity style={styles.itemTextContainer} onPress={onPress}>
-        <Text
-          style={[
-            styles.itemText,
-            item.completed && styles.itemTextCompleted,
-          ]}>
-          {item.name}
-        </Text>
+        <View style={styles.itemNameRow}>
+          <Text
+            style={[
+              styles.itemText,
+              item.completed && styles.itemTextCompleted,
+            ]}>
+            {item.name}
+          </Text>
+          {item.note && (
+            <Text
+              style={[
+                styles.itemText,
+                styles.itemNoteText,
+                item.completed && styles.itemTextCompleted,
+              ]}>
+              {' (' + item.note + ')'}
+            </Text>
+          )}
+        </View>
         
         <View style={styles.metaRow}>
           {itemDueDate && (
@@ -170,10 +184,17 @@ const ListDetailScreen = ({ route }) => {
   // 3. ADD STATE for collapsed sections
   const [collapsedSections, setCollapsedSections] = useState([]);
 
+  // State for menu visibility
+  const [isMenuVisible, setIsMenuVisible] = useState(false);
+
+  // State for hiding completed items
+  const [hideCompleted, setHideCompleted] = useState(false);
+
   const {
     data: items,
     loading,
     error,
+    refresh,
   } = useFamilyCollection(`lists/${listId}/items`);
 
   const listColor =
@@ -200,6 +221,54 @@ const ListDetailScreen = ({ route }) => {
     );
   };
 
+  // Handler to check all items
+  const handleCheckAllItems = async () => {
+    if (!items) return;
+    
+    try {
+      const uncheckedItems = items.filter(item => !item.completed);
+      await Promise.all(
+        uncheckedItems.map(item =>
+          updateListItem(familyId, listId, item.id, { completed: true })
+        )
+      );
+    } catch (e) {
+      console.error('Failed to check all items:', e);
+    }
+  };
+
+  // Handler to uncheck all items
+  const handleUncheckAllItems = async () => {
+    if (!items) return;
+    
+    try {
+      const checkedItems = items.filter(item => item.completed);
+      await Promise.all(
+        checkedItems.map(item =>
+          updateListItem(familyId, listId, item.id, { completed: false })
+        )
+      );
+    } catch (e) {
+      console.error('Failed to uncheck all items:', e);
+    }
+  };
+
+  // Handler to delete completed items
+  const handleDeleteCompletedItems = async () => {
+    if (!items) return;
+    
+    try {
+      const completedItems = items.filter(item => item.completed);
+      await Promise.all(
+        completedItems.map(item =>
+          deleteListItem(familyId, listId, item.id)
+        )
+      );
+    } catch (e) {
+      console.error('Failed to delete completed items:', e);
+    }
+  };
+
   // 5. UPDATE useMemo to use the new state
   const sections = useMemo(() => {
     if (!items) return [];
@@ -212,12 +281,17 @@ const ListDetailScreen = ({ route }) => {
       return a.createdAt.toDate() - b.createdAt.toDate();
     });
 
+    // Filter out completed items if hideCompleted is true
+    const filteredItems = hideCompleted 
+      ? sortedItems.filter(item => !item.completed)
+      : sortedItems;
+
     const categories =
       listType === 'shopping'
         ? SHOPPING_CATEGORIES
         : TODO_DEFAULT_CATEGORIES;
 
-    const grouped = sortedItems.reduce((acc, item) => {
+    const grouped = filteredItems.reduce((acc, item) => {
       const categoryId = item.category || 'uncategorized';
       if (!acc[categoryId]) {
         const catInfo = categories.find((c) => c.id === categoryId) || {
@@ -243,7 +317,7 @@ const ListDetailScreen = ({ route }) => {
       ...section,
       data: collapsedSections.includes(section.title) ? [] : section.data,
     }));
-  }, [items, listType, collapsedSections]); // 7. ADD collapsedSections to dependency array
+  }, [items, listType, collapsedSections, hideCompleted]); // 7. ADD collapsedSections and hideCompleted to dependency array
 
   const renderList = () => {
     // ... (This function remains the same)
@@ -316,8 +390,88 @@ const ListDetailScreen = ({ route }) => {
         listName={listName}
         listColor={listColor}
         listIcon={listIcon}
+        onMenuPress={() => setIsMenuVisible(true)}
       />
       {renderList()}
+
+      {/* Menu Modal */}
+      <Modal
+        visible={isMenuVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setIsMenuVisible(false)}>
+        <TouchableOpacity
+          style={styles.menuOverlay}
+          activeOpacity={1}
+          onPress={() => setIsMenuVisible(false)}>
+          <View style={styles.menuContainer}>
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => {
+                setIsMenuVisible(false);
+                refresh();
+              }}>
+              <RefreshCw size={20} color={COLORS.text_dark} />
+              <Text style={styles.menuText}>Refresh</Text>
+            </TouchableOpacity>
+
+            <View style={styles.menuDivider} />
+
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => {
+                setIsMenuVisible(false);
+                setHideCompleted(!hideCompleted);
+              }}>
+              {hideCompleted ? (
+                <Eye size={20} color={COLORS.text_dark} />
+              ) : (
+                <EyeOff size={20} color={COLORS.text_dark} />
+              )}
+              <Text style={styles.menuText}>
+                {hideCompleted ? 'Show completed items' : 'Hide completed items'}
+              </Text>
+            </TouchableOpacity>
+
+            <View style={styles.menuDivider} />
+
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => {
+                setIsMenuVisible(false);
+                handleCheckAllItems();
+              }}>
+              <Check size={20} color={COLORS.text_dark} />
+              <Text style={styles.menuText}>Check all items</Text>
+            </TouchableOpacity>
+
+            <View style={styles.menuDivider} />
+
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => {
+                setIsMenuVisible(false);
+                handleUncheckAllItems();
+              }}>
+              <Square size={20} color={COLORS.text_dark} />
+              <Text style={styles.menuText}>Uncheck all items</Text>
+            </TouchableOpacity>
+
+            <View style={styles.menuDivider} />
+
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => {
+                setIsMenuVisible(false);
+                handleDeleteCompletedItems();
+              }}>
+              <XIcon size={20} color={COLORS.text_dark} />
+              <Text style={styles.menuText}>Delete completed items</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
       <TouchableOpacity
         style={styles.fab}
         onPress={() =>
@@ -423,9 +577,17 @@ const styles = StyleSheet.create({
   itemTextContainer: {
     flex: 1,
   },
+  itemNameRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
   itemText: {
     fontSize: FONT_SIZES.md, // Larger font size
     color: COLORS.text_dark,
+  },
+  itemNoteText: {
+    color: COLORS.text_light,
+    opacity: 0.7,
   },
   itemTextCompleted: {
     textDecorationLine: 'line-through',
@@ -478,6 +640,41 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: FONT_SIZES.md,
     color: COLORS.text_light,
+  },
+  // --- Menu Modal ---
+  menuOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-start',
+    alignItems: 'flex-end',
+    paddingTop: 60,
+    paddingRight: SPACING.md,
+  },
+  menuContainer: {
+    backgroundColor: COLORS.white,
+    borderRadius: RADII.md,
+    minWidth: 220,
+    overflow: 'hidden',
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.lg,
+  },
+  menuText: {
+    fontSize: FONT_SIZES.md,
+    color: COLORS.text_dark,
+    marginLeft: SPACING.md,
+  },
+  menuDivider: {
+    height: 1,
+    backgroundColor: COLORS.border,
   },
 });
 

@@ -6,7 +6,7 @@ import { useFamily } from '../hooks/useFamily';
 /**
  * A reusable hook to get a Firestore collection in real-time.
  * @param {string} collectionPath The path to the collection (e.g., 'lists')
- * @returns {object} { data: array, loading: boolean, error: object }
+ * @returns {object} { data: array, loading: boolean, error: object, refresh: function }
  */
 export const useFamilyCollection = (collectionPath) => {
   const { user } = useAuth();
@@ -14,6 +14,7 @@ export const useFamilyCollection = (collectionPath) => {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   useEffect(() => {
     if (!user || !familyId || !collectionPath) {
@@ -43,9 +44,14 @@ export const useFamilyCollection = (collectionPath) => {
         }
       );
     return () => unsubscribe();
-  }, [user, familyId, collectionPath]);
+  }, [user, familyId, collectionPath, refreshTrigger]);
 
-  return { data, loading, error };
+  const refresh = () => {
+    setLoading(true);
+    setRefreshTrigger((prev) => prev + 1);
+  };
+
+  return { data, loading, error, refresh };
 };
 
 /**

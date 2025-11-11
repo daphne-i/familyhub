@@ -24,7 +24,6 @@ import {
   Repeat,
   ShoppingCart,
   Type,
-  Heart,
   Send,
 } from 'lucide-react-native';
 import * as theme from '../../utils/theme';
@@ -495,13 +494,6 @@ const ItemDetailScreen = ({ route }) => {
           />
         </View>
 
-        {/* Footer */}
-        <View style={styles.footerActions}>
-          <TouchableOpacity>
-            <Heart size={24} color={COLORS.text_light} />
-          </TouchableOpacity>
-        </View>
-
         <Text style={styles.footerText}>
           {footerText}
         </Text>
@@ -564,7 +556,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: SPACING.md,
-    paddingBottom: 100,
+    paddingBottom: SPACING.md,
   },
   centered: {
     flex: 1,
@@ -646,7 +638,8 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontSize: FONT_SIZES.sm,
     color: COLORS.text_light,
-    marginBottom: SPACING.lg,
+    marginBottom: SPACING.sm,
+    marginTop: SPACING.md,
   },
   // --- Comment Item ---
   commentItem: {

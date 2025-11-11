@@ -191,8 +191,8 @@ const AddItemScreen = ({ route }) => {
           {/* ... (Category Picker is unchanged) ... */}
           <FormRow
             icon={<Text style={styles.iconText}>{selectedCategory.icon}</Text>}
-            label="Uncategorized"
-            value={selectedCategory.name}
+            label={selectedCategory.name}
+            value={null}
             onPress={() => setCategoryPickerVisible(true)}
           />
 
