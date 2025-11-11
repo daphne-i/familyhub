@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
@@ -21,6 +21,8 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../../contexts/AuthContext';
 import * as theme from '../../utils/theme';
+// 1. IMPORT THE HOOK
+import { useFamilyCollection } from '../../services/firestore';
 
 const { COLORS, FONT_SIZES, SPACING, RADII } = theme;
 
@@ -62,6 +64,24 @@ const HubHeader = ({ onSettingsPress }) => {
 
 const HubScreen = () => {
   const navigation = useNavigation();
+  // 2. FETCH THE LISTS DATA
+  const { data: lists, loading: loadingLists } = useFamilyCollection('lists');
+  // We can add other collections here as we build them
+
+  // 3. CALCULATE PENDING ITEMS
+  // We calculate this once at the top
+  const totalPendingItems = useMemo(() => {
+    if (!lists) return 0;
+    // Sum up 'pendingItemCount' from all lists
+    return lists.reduce((sum, list) => sum + (list.pendingItemCount || 0), 0);
+  }, [lists]);
+
+  const getPendingText = () => {
+    if (loadingLists) return 'Loading...';
+    if (totalPendingItems === 0) return 'No pending items';
+    if (totalPendingItems === 1) return '1 pending item';
+    return `${totalPendingItems} pending items`;
+  };
 
   return (
     <View style={styles.container}>
@@ -73,7 +93,8 @@ const HubScreen = () => {
           {/* Lists */}
           <HubTile
             title="Lists"
-            subtitle="2 lists" // static
+            // 4. USE THE DYNAMIC DATA
+            subtitle={getPendingText()}
             icon={<List size={30} color={COLORS.primary} />}
             iconBgColor={COLORS.primary_light}
             onPress={() => navigation.push('Lists')}
