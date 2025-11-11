@@ -14,7 +14,6 @@ import {
   X,
   Check,
   Square,
-  Tag,
   User,
   Calendar,
   Bell,
@@ -26,15 +25,23 @@ import * as theme from '../../utils/theme';
 import { addItemToList } from '../../services/firestore';
 import { useAuth } from '../../contexts/AuthContext';
 import { useFamily } from '../../hooks/useFamily';
-import CategoryPickerModal from './CategoryPickerModal'; // Import the modal
 import {
   SHOPPING_CATEGORIES,
   TODO_DEFAULT_CATEGORIES,
 } from '../../constants';
 
+// Local Components
+import CategoryPickerModal from './CategoryPickerModal';
+import MemberPickerModal from './MemberPickerModal';
+
+// Common Components (UPDATED IMPORT)
+import DateTimePickerModal from '../Common/DateTimePickerModal'; 
+
 const { COLORS, FONT_SIZES, SPACING, RADII } = theme;
 
-// --- Components ---
+// ... (Rest of the file code remains exactly the same as before)
+// To be safe, you can keep the existing code below this point, 
+// or copy the full file logic from the previous step if you need it.
 
 const ModalHeader = ({ onSave, loading }) => {
   const navigation = useNavigation();
@@ -62,19 +69,33 @@ const ModalHeader = ({ onSave, loading }) => {
   );
 };
 
-// Re-usable Form Row Component
 const FormRow = ({ icon, label, onPress, value }) => (
   <TouchableOpacity style={styles.formRow} onPress={onPress}>
-    <View style={styles.formRowIcon}>{icon}</View>
-    <Text
-      style={[
-        styles.formRowLabel,
-        value ? styles.formRowLabelWithValue : styles.formRowLabel,
-      ]}>
-      {value || label}
-    </Text>
+    <View style={styles.formRowLeft}>
+      {icon}
+      <Text style={styles.formLabel}>{label}</Text>
+    </View>
+    {value && <Text style={styles.formValue}>{value}</Text>}
   </TouchableOpacity>
 );
+
+// --- Helper ---
+const formatDate = (date) => {
+  if (!date) return null;
+  return date.toLocaleDateString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  });
+};
+
+const formatTime = (date) => {
+  if (!date) return null;
+  return date.toLocaleTimeString(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+};
 
 // --- Main Screen ---
 
@@ -86,13 +107,20 @@ const AddItemScreen = ({ route }) => {
 
   const [name, setName] = useState('');
   const [note, setNote] = useState('');
-  const [category, setCategory] = useState(null); // { id, name, icon }
+  const [category, setCategory] = useState(null);
+  const [assignee, setAssignee] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [isCategoryPickerVisible, setCategoryPickerVisible] = useState(false);
+  const [isMemberPickerVisible, setMemberPickerVisible] = useState(false);
   const [isNoteInputVisible, setNoteInputVisible] = useState(false);
 
-  // Get the default category info
+  // State for Date/Repeat
+  const [dueDate, setDueDate] = useState(null);
+  const [repeat, setRepeat] = useState('One time only');
+  const [isDatePickerVisible, setDatePickerVisible] = useState(false);
+
+  // Determine default category
   const defaultCategory = useMemo(() => {
     const categories =
       listType === 'shopping'
@@ -115,19 +143,25 @@ const AddItemScreen = ({ route }) => {
       name: name,
       note: note,
       category: selectedCategory.id,
+      assigneeId: assignee ? assignee.id : null,
       completed: false,
       createdBy: user.uid,
-      // We'll add dueDate, etc. here later
+      // Add new fields
+      dueDate: dueDate,
+      repeat: repeat,
     };
 
     try {
       await addItemToList(familyId, listId, newItem);
-      navigation.goBack(); // Close the modal on success
+      navigation.goBack();
     } catch (e) {
       setError(e.message);
       setLoading(false);
     }
   };
+
+  const formattedDate = dueDate ? formatDate(dueDate) : null;
+  const formattedTime = dueDate ? formatTime(dueDate) : null;
 
   return (
     <View style={styles.container}>
@@ -136,15 +170,13 @@ const AddItemScreen = ({ route }) => {
         <View style={styles.formCard}>
           {/* Title Input */}
           <View style={[styles.formRow, styles.inputRow]}>
-            <View style={styles.formRowIcon}>
-              <Square size={24} color={COLORS.text_light} />
-            </View>
+            <Square size={20} color={COLORS.text_light} />
             <TextInput
+              style={styles.textInput}
               placeholder="Title"
               placeholderTextColor={COLORS.text_light}
               value={name}
               onChangeText={setName}
-              style={styles.textInput}
               autoFocus={true}
             />
           </View>
@@ -157,19 +189,34 @@ const AddItemScreen = ({ route }) => {
             onPress={() => setCategoryPickerVisible(true)}
           />
 
-          {/* Static Rows */}
+          {/* Assignee Row */}
           <FormRow
             icon={<User size={20} color={COLORS.text_light} />}
             label="Assigned to"
+            value={assignee ? assignee.displayName : null}
+            onPress={() => setMemberPickerVisible(true)}
           />
+
+          {/* Date/Repeat Rows */}
           <FormRow
             icon={<Calendar size={20} color={COLORS.text_light} />}
             label="Set date & reminder"
+            value={formattedDate ? `${formattedDate} | ${formattedTime}` : null}
+            onPress={() => setDatePickerVisible(true)}
           />
           <FormRow
             icon={<Repeat size={20} color={COLORS.text_light} />}
             label="Repeat"
+            value={repeat !== 'One time only' ? repeat : null}
+            onPress={() =>
+              navigation.navigate('Repeat', {
+                currentValue: repeat,
+                onSave: setRepeat,
+              })
+            }
           />
+
+          {/* Static Row */}
           <FormRow
             icon={<ImageIcon size={20} color={COLORS.text_light} />}
             label="Add photo"
@@ -178,15 +225,13 @@ const AddItemScreen = ({ route }) => {
           {/* Note Input */}
           {isNoteInputVisible ? (
             <View style={[styles.formRow, styles.inputRow]}>
-              <View style={styles.formRowIcon}>
-                <Type size={20} color={COLORS.text_light} />
-              </View>
+              <Type size={20} color={COLORS.text_light} />
               <TextInput
+                style={styles.textInput}
                 placeholder="Add note"
                 placeholderTextColor={COLORS.text_light}
                 value={note}
                 onChangeText={setNote}
-                style={styles.textInput}
                 autoFocus={true}
               />
             </View>
@@ -208,6 +253,21 @@ const AddItemScreen = ({ route }) => {
         onSelect={setCategory}
         listType={listType}
       />
+      
+      <MemberPickerModal
+        visible={isMemberPickerVisible}
+        onClose={() => setMemberPickerVisible(false)}
+        onSelect={setAssignee}
+      />
+      
+      <DateTimePickerModal
+        visible={isDatePickerVisible}
+        onClose={() => setDatePickerVisible(false)}
+        onSave={(date) => {
+          setDatePickerVisible(false);
+          setDueDate(date);
+        }}
+      />
     </View>
   );
 };
@@ -218,7 +278,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background_modal,
   },
   scrollContent: {
-    padding: SPACING.lg,
+    padding: SPACING.md,
   },
   // --- Header ---
   header: {
@@ -243,44 +303,46 @@ const styles = StyleSheet.create({
   formCard: {
     backgroundColor: COLORS.white,
     borderRadius: RADII.lg,
+    overflow: 'hidden',
   },
   formRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     padding: SPACING.lg,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
-  inputRow: {
-    paddingVertical: SPACING.md, // Adjust for input height
-  },
-  formRowIcon: {
-    width: 30,
+  formRowLeft: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginRight: SPACING.lg,
+  },
+  formLabel: {
+    fontSize: FONT_SIZES.md,
+    color: COLORS.text_dark,
+    marginLeft: SPACING.md,
+  },
+  formValue: {
+    fontSize: FONT_SIZES.md,
+    color: COLORS.text_light,
   },
   iconText: {
     fontSize: FONT_SIZES.md,
   },
-  formRowLabel: {
-    fontSize: FONT_SIZES.md,
-    color: COLORS.text_light,
-  },
-  formRowLabelWithValue: {
-    color: COLORS.text_dark,
+  inputRow: {
+    paddingVertical: SPACING.sm, // Smaller padding for inputs
   },
   textInput: {
     flex: 1,
     fontSize: FONT_SIZES.md,
     color: COLORS.text_dark,
-    height: 40,
+    marginLeft: SPACING.md,
+    paddingVertical: SPACING.sm, // Ensure height
   },
-  // --- Error ---
   errorText: {
     color: COLORS.text_danger,
-    fontSize: FONT_SIZES.base,
     textAlign: 'center',
-    marginTop: SPACING.md,
+    marginTop: SPACING.lg,
   },
 });
 

@@ -1,12 +1,21 @@
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+
+// --- Screen Imports ---
 import HubScreen from '../screens/Hub/HubScreen';
 import SettingsScreen from '../screens/Settings/SettingsScreen';
+
+// Lists
 import ListsScreen from '../screens/Lists/ListsScreen';
 import ListDetailScreen from '../screens/Lists/ListDetailScreen';
 import AddItemScreen from '../screens/Lists/AddItemScreen';
 import ItemDetailScreen from '../screens/Lists/ItemDetailScreen';
-import AddListScreen from '../screens/Lists/AddListScreen'; // 1. Import (note: filename has typo AddLIist)
+import AddListScreen from '../screens/Lists/AddListScreen';
+
+// Common (Moved files)
+import RepeatScreen from '../screens/Common/RepeatScreen'; 
+
+// Other Features
 import CalendarScreen from '../screens/Calendar/CalendarScreen';
 import NewEventScreen from '../screens/Calendar/NewEventScreen';
 import BudgetScreen from '../screens/Budget/BudgetScreen';
@@ -19,35 +28,35 @@ const Stack = createNativeStackNavigator();
 const HubStack = () => {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      {/* --- Main Hub --- */}
+      {/* Hub & Settings */}
       <Stack.Screen name="Hub" component={HubScreen} />
       <Stack.Screen name="Settings" component={SettingsScreen} />
 
-      {/* --- Lists Feature (Section 6.1) --- */}
+      {/* Lists Feature */}
       <Stack.Screen name="Lists" component={ListsScreen} />
       <Stack.Screen name="ListDetail" component={ListDetailScreen} />
-      <Stack.Screen
-        name="AddItem"
-        component={AddItemScreen}
+      <Stack.Screen 
+        name="AddItem" 
+        component={AddItemScreen} 
         options={{ presentation: 'modal' }}
       />
       <Stack.Screen name="ItemDetail" component={ItemDetailScreen} />
-      {/* 2. Add the new screen */}
-      <Stack.Screen
-        name="AddList"
-        component={AddListScreen}
+      <Stack.Screen 
+        name="AddList" 
+        component={AddListScreen} 
         options={{ presentation: 'modal' }}
       />
+      <Stack.Screen name="Repeat" component={RepeatScreen} />
 
-      {/* --- Calendar Feature (Section 6.2) --- */}
+      {/* Calendar Feature */}
       <Stack.Screen name="Calendar" component={CalendarScreen} />
-      <Stack.Screen
-        name="NewEvent"
-        component={NewEventScreen}
+      <Stack.Screen 
+        name="NewEvent" 
+        component={NewEventScreen} 
         options={{ presentation: 'modal' }}
       />
 
-      {/* --- Other Feature Placeholders --- */}
+      {/* Other Features */}
       <Stack.Screen name="Budget" component={BudgetScreen} />
       <Stack.Screen name="Documents" component={DocumentsScreen} />
       <Stack.Screen name="MealPlanner" component={MealPlannerScreen} />
