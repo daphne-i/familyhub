@@ -34,15 +34,12 @@ import {
 import CategoryPickerModal from './CategoryPickerModal';
 import MemberPickerModal from './MemberPickerModal';
 
-// Common Components (UPDATED IMPORT)
-import DateTimePickerModal from '../Common/DateTimePickerModal'; 
+// Common Components
+import DateTimePickerModal from '../Common/DateTimePickerModal';
 
 const { COLORS, FONT_SIZES, SPACING, RADII } = theme;
 
-// ... (Rest of the file code remains exactly the same as before)
-// To be safe, you can keep the existing code below this point, 
-// or copy the full file logic from the previous step if you need it.
-
+// ... (ModalHeader component is unchanged) ...
 const ModalHeader = ({ onSave, loading }) => {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
@@ -69,6 +66,7 @@ const ModalHeader = ({ onSave, loading }) => {
   );
 };
 
+// ... (FormRow component is unchanged) ...
 const FormRow = ({ icon, label, onPress, value }) => (
   <TouchableOpacity style={styles.formRow} onPress={onPress}>
     <View style={styles.formRowLeft}>
@@ -79,7 +77,7 @@ const FormRow = ({ icon, label, onPress, value }) => (
   </TouchableOpacity>
 );
 
-// --- Helper ---
+// ... (formatDate, formatTime helpers are unchanged) ...
 const formatDate = (date) => {
   if (!date) return null;
   return date.toLocaleDateString(undefined, {
@@ -105,6 +103,7 @@ const AddItemScreen = ({ route }) => {
   const { familyId } = useFamily();
   const { listId, listType } = route.params;
 
+  // ... (state variables are unchanged) ...
   const [name, setName] = useState('');
   const [note, setNote] = useState('');
   const [category, setCategory] = useState(null);
@@ -114,13 +113,11 @@ const AddItemScreen = ({ route }) => {
   const [isCategoryPickerVisible, setCategoryPickerVisible] = useState(false);
   const [isMemberPickerVisible, setMemberPickerVisible] = useState(false);
   const [isNoteInputVisible, setNoteInputVisible] = useState(false);
-
-  // State for Date/Repeat
   const [dueDate, setDueDate] = useState(null);
   const [repeat, setRepeat] = useState('One time only');
   const [isDatePickerVisible, setDatePickerVisible] = useState(false);
-
-  // Determine default category
+  
+  // ... (defaultCategory logic is unchanged) ...
   const defaultCategory = useMemo(() => {
     const categories =
       listType === 'shopping'
@@ -131,6 +128,19 @@ const AddItemScreen = ({ route }) => {
 
   const selectedCategory = category || defaultCategory;
 
+  // --- NEW FUNCTION (Rule 1) ---
+  const handleRepeatSave = (newRepeatValue) => {
+    setRepeat(newRepeatValue);
+    // If user picks a repeat option AND no date is set, default to tomorrow
+    if (newRepeatValue !== 'One time only' && dueDate === null) {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(0, 0, 0, 0); // 12:00 AM
+      setDueDate(tomorrow);
+    }
+  };
+
+  // ... (handleSave logic is unchanged) ...
   const handleSave = async () => {
     if (!name) {
       setError('Item name is required.');
@@ -146,7 +156,6 @@ const AddItemScreen = ({ route }) => {
       assigneeId: assignee ? assignee.id : null,
       completed: false,
       createdBy: user.uid,
-      // Add new fields
       dueDate: dueDate,
       repeat: repeat,
     };
@@ -168,7 +177,7 @@ const AddItemScreen = ({ route }) => {
       <ModalHeader onSave={handleSave} loading={loading} />
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.formCard}>
-          {/* Title Input */}
+          {/* ... (Title Input is unchanged) ... */}
           <View style={[styles.formRow, styles.inputRow]}>
             <Square size={20} color={COLORS.text_light} />
             <TextInput
@@ -181,7 +190,7 @@ const AddItemScreen = ({ route }) => {
             />
           </View>
 
-          {/* Category Picker */}
+          {/* ... (Category Picker is unchanged) ... */}
           <FormRow
             icon={<Text style={styles.iconText}>{selectedCategory.icon}</Text>}
             label="Uncategorized"
@@ -189,7 +198,7 @@ const AddItemScreen = ({ route }) => {
             onPress={() => setCategoryPickerVisible(true)}
           />
 
-          {/* Assignee Row */}
+          {/* ... (Assignee Row is unchanged) ... */}
           <FormRow
             icon={<User size={20} color={COLORS.text_light} />}
             label="Assigned to"
@@ -197,13 +206,15 @@ const AddItemScreen = ({ route }) => {
             onPress={() => setMemberPickerVisible(true)}
           />
 
-          {/* Date/Repeat Rows */}
+          {/* ... (Date Row is unchanged) ... */}
           <FormRow
             icon={<Calendar size={20} color={COLORS.text_light} />}
             label="Set date & reminder"
             value={formattedDate ? `${formattedDate} | ${formattedTime}` : null}
             onPress={() => setDatePickerVisible(true)}
           />
+          
+          {/* --- UPDATED REPEAT ROW --- */}
           <FormRow
             icon={<Repeat size={20} color={COLORS.text_light} />}
             label="Repeat"
@@ -211,18 +222,18 @@ const AddItemScreen = ({ route }) => {
             onPress={() =>
               navigation.navigate('Repeat', {
                 currentValue: repeat,
-                onSave: setRepeat,
+                onSave: handleRepeatSave, // Use the new handler
               })
             }
           />
 
-          {/* Static Row */}
+          {/* ... (Photo Row is unchanged) ... */}
           <FormRow
             icon={<ImageIcon size={20} color={COLORS.text_light} />}
             label="Add photo"
           />
 
-          {/* Note Input */}
+          {/* ... (Note Input is unchanged) ... */}
           {isNoteInputVisible ? (
             <View style={[styles.formRow, styles.inputRow]}>
               <Type size={20} color={COLORS.text_light} />
@@ -247,6 +258,7 @@ const AddItemScreen = ({ route }) => {
         {error && <Text style={styles.errorText}>{error}</Text>}
       </ScrollView>
 
+      {/* ... (Modals are unchanged) ... */}
       <CategoryPickerModal
         visible={isCategoryPickerVisible}
         onClose={() => setCategoryPickerVisible(false)}
@@ -272,6 +284,7 @@ const AddItemScreen = ({ route }) => {
   );
 };
 
+// ... (Styles are unchanged) ...
 const styles = StyleSheet.create({
   container: {
     flex: 1,

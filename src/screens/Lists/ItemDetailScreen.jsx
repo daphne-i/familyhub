@@ -32,25 +32,22 @@ import {
   deleteListItem,
 } from '../../services/firestore';
 import { useFamily } from '../../hooks/useFamily';
+import { useAuth } from '../../contexts/AuthContext'; // 1. IMPORT useAuth
 import {
   SHOPPING_CATEGORIES,
   TODO_DEFAULT_CATEGORIES,
 } from '../../constants';
+import firestore from '@react-native-firebase/firestore'; // IMPORT FIRESTORE
 
 // Local Components
 import MemberPickerModal from './MemberPickerModal';
 
-// Common Components (UPDATED IMPORT)
+// Common Components
 import DateTimePickerModal from '../Common/DateTimePickerModal';
-import { useAuth } from '../../contexts/AuthContext';
 
 const { COLORS, FONT_SIZES, SPACING, RADII } = theme;
 
-// ... (Rest of the file code remains exactly the same as before)
-// I will include the full component implementation for completeness so you can copy-paste.
-
-// --- Components ---
-
+// ... (DetailHeader, FormRow, format helpers are unchanged) ...
 const DetailHeader = ({ onDelete }) => {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
@@ -83,7 +80,6 @@ const FormRow = ({ icon, label, onPress, value, valueColor }) => (
   </TouchableOpacity>
 );
 
-// --- Helper ---
 const formatDate = (date) => {
   if (!date) return null;
   return date.toLocaleDateString(undefined, {
@@ -100,30 +96,32 @@ const formatTime = (date) => {
     minute: '2-digit',
   });
 };
-
-// --- Main Screen ---
+// ...
 
 const ItemDetailScreen = ({ route }) => {
   const navigation = useNavigation();
-  const { familyId, membersList } = useFamily();
-  const { itemId, listId, listType, listName } = route.params;
-  const { user } = useAuth();
+  // ... (hooks and route params are unchanged) ...
+  
+  // 2. FIX THE DESTRUCTURING
+  const { familyId, membersList } = useFamily(); // Remove 'user'
+  const { user } = useAuth(); // Get 'user' from useAuth()
 
-  // Fetch the item data in real-time
+  const { itemId, listId, listType, listName } = route.params;
+
   const {
     data: item,
     loading,
     error,
   } = useFamilyDocument(`lists/${listId}/items/${itemId}`);
 
-  // Local state for editing fields
+  // ... (local state is unchanged) ...
   const [name, setName] = useState('');
   const [note, setNote] = useState('');
   const [isNoteFocused, setIsNoteFocused] = useState(false);
   const [isMemberPickerVisible, setMemberPickerVisible] = useState(false);
   const [isDatePickerVisible, setDatePickerVisible] = useState(false);
 
-  // When item data loads from Firestore, populate local state
+  // ... (useEffect and memos are unchanged) ...
   useEffect(() => {
     if (item) {
       setName(item.name || '');
@@ -131,7 +129,6 @@ const ItemDetailScreen = ({ route }) => {
     }
   }, [item]);
 
-  // Find the category info
   const category = useMemo(() => {
     if (!item || !item.category) return null;
     const categories =
@@ -141,26 +138,29 @@ const ItemDetailScreen = ({ route }) => {
     return categories.find((c) => c.id === item.category);
   }, [item, listType]);
 
-  // Find the assigned member object
   const assignee = useMemo(() => {
     if (!item || !item.assigneeId || !membersList) return null;
     return membersList.find((m) => m.id === item.assigneeId);
   }, [item, membersList]);
   
-  // Format Date/Time from Firestore
   const dueDate = useMemo(() => {
     return item?.dueDate ? item.dueDate.toDate() : null;
   }, [item]);
   const formattedDate = dueDate ? formatDate(dueDate) : null;
   const formattedTime = dueDate ? formatTime(dueDate) : null;
-
-  // --- Functions ---
   
+  const lastUpdatedUser = useMemo(() => {
+     if (!item?.updatedBy || !membersList) return user?.displayName || '...';
+     return membersList.find((m) => m.id === item.updatedBy)?.displayName || user?.displayName || '...';
+  }, [item, membersList, user]);
+
+  // ... (handleToggleComplete, handleFieldUpdate, handleDelete, handleAssigneeSelect are unchanged) ...
   const handleToggleComplete = async () => {
     if (!item) return;
     try {
       await updateListItem(familyId, listId, itemId, {
         completed: !item.completed,
+        updatedBy: user.uid, // Track who updated
       });
     } catch (e) {
       Alert.alert('Error', 'Failed to update item.');
@@ -172,6 +172,7 @@ const ItemDetailScreen = ({ route }) => {
     try {
       await updateListItem(familyId, listId, itemId, {
         [field]: value,
+        updatedBy: user.uid, // Track who updated
       });
     } catch (e) {
       Alert.alert('Error', `Failed to update ${field}.`);
@@ -206,37 +207,55 @@ const ItemDetailScreen = ({ route }) => {
     try {
       await updateListItem(familyId, listId, itemId, {
         assigneeId: newAssigneeId,
+        updatedBy: user.uid,
       });
     } catch (e) {
       Alert.alert('Error', 'Failed to update assignee.');
     }
   };
 
+  // --- THIS IS THE FIX ---
   const handleDateSave = async (selectedDate) => {
     setDatePickerVisible(false);
+    if (!selectedDate) return; // Don't do anything if date is invalid
+
     try {
       await updateListItem(familyId, listId, itemId, {
-        dueDate: selectedDate,
+        // We MUST convert the JS Date object to a Firestore Timestamp
+        dueDate: firestore.Timestamp.fromDate(selectedDate),
+        updatedBy: user.uid,
       });
     } catch (e) {
+      console.error("Date save error:", e); // Log the actual error
       Alert.alert('Error', 'Failed to update date.');
     }
   };
+  // --- END FIX ---
 
   const handleRepeatSave = async (selectedRepeat) => {
+    // ... (This function is unchanged) ...
+    const updates = { 
+      repeat: selectedRepeat,
+      updatedBy: user.uid,
+    };
+    
+    if (selectedRepeat !== 'One time only' && !item.dueDate) {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(0, 0, 0, 0); // 12:00 AM
+      updates.dueDate = firestore.Timestamp.fromDate(tomorrow);
+    }
+    
     try {
-      await updateListItem(familyId, listId, itemId, {
-        repeat: selectedRepeat,
-      });
+      await updateListItem(familyId, listId, itemId, updates);
     } catch (e) {
       Alert.alert('Error', 'Failed to update repeat setting.');
     }
   };
 
-
-  // --- Render ---
-
+  // ... (Render logic is unchanged) ...
   if (loading) {
+// ... (rest of the file is identical) ...
     return (
       <View style={styles.centered}>
         <ActivityIndicator size="large" color={COLORS.primary} />
@@ -257,7 +276,7 @@ const ItemDetailScreen = ({ route }) => {
       <DetailHeader onDelete={handleDelete} />
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.formCard}>
-          {/* Title Input */}
+          {/* ... (Title Input is unchanged) ... */}
           <View style={[styles.formRow, styles.inputRow]}>
             <TouchableOpacity onPress={handleToggleComplete}>
               {item.completed ? (
@@ -274,20 +293,20 @@ const ItemDetailScreen = ({ route }) => {
             />
           </View>
 
-          {/* Category */}
+          {/* ... (Category is unchanged) ... */}
           <FormRow
             icon={<Text style={styles.iconText}>{category?.icon}</Text>}
             label="Category"
             value={category?.name}
             // TODO: Add onPress to open category picker
           />
-          {/* List */}
+          {/* ... (List is unchanged) ... */}
           <FormRow
             icon={<ShoppingCart size={20} color={COLORS.text_light} />}
             label="List"
             value={listName}
           />
-          {/* Note Input */}
+          {/* ... (Note Input is unchanged) ... */}
           <View style={[styles.formRow, styles.inputRow]}>
             <Type size={20} color={COLORS.text_light} />
             <TextInput
@@ -302,7 +321,7 @@ const ItemDetailScreen = ({ route }) => {
             />
           </View>
 
-          {/* Assignee Row */}
+          {/* ... (Assignee Row is unchanged) ... */}
           <FormRow
             icon={<User size={20} color={COLORS.text_light} />}
             label="Assign to"
@@ -310,7 +329,7 @@ const ItemDetailScreen = ({ route }) => {
             onPress={() => setMemberPickerVisible(true)}
           />
           
-          {/* Date/Repeat Rows */}
+          {/* ... (Date Row is unchanged) ... */}
           <FormRow
             icon={<Calendar size={20} color={COLORS.text_light} />}
             label="Set date"
@@ -318,6 +337,7 @@ const ItemDetailScreen = ({ route }) => {
             valueColor={formattedDate ? COLORS.text_danger : null}
             onPress={() => setDatePickerVisible(true)}
           />
+          {/* ... (Reminder Row is unchanged) ... */}
           <FormRow
             icon={<Bell size={20} color={COLORS.text_light} />}
             label="Add reminder"
@@ -325,6 +345,7 @@ const ItemDetailScreen = ({ route }) => {
             valueColor={formattedTime ? COLORS.text_danger : null}
             onPress={() => setDatePickerVisible(true)}
           />
+          {/* --- UPDATED REPEAT ROW --- */}
           <FormRow
             icon={<Repeat size={20} color={COLORS.text_light} />}
             label="Repeat"
@@ -332,46 +353,45 @@ const ItemDetailScreen = ({ route }) => {
             onPress={() =>
               navigation.navigate('Repeat', {
                 currentValue: item?.repeat || 'One time only',
-                onSave: handleRepeatSave,
+                onSave: handleRepeatSave, // Use the new handler
               })
             }
           />
 
-          {/* Static Row */}
+          {/* ... (Photo Row is unchanged) ... */}
           <FormRow
             icon={<ImageIcon size={20} color={COLORS.text_light} />}
             label="Add photo"
           />
         </View>
 
-        {/* Favorite Button */}
+        {/* ... (Favorite Button is unchanged) ... */}
         <View style={styles.footerActions}>
           <TouchableOpacity>
             <Heart size={24} color={COLORS.text_light} />
           </TouchableOpacity>
         </View>
 
-        {/* Footer Text */}
+        {/* ... (Footer Text is unchanged) ... */}
         <Text style={styles.footerText}>
-          Updated 4 min ago by {user?.displayName || '...'}
+          Updated 4 min ago by {lastUpdatedUser}
         </Text>
       </ScrollView>
 
-      {/* Member Picker Modal */}
+      {/* ... (Modals are unchanged) ... */}
       <MemberPickerModal
         visible={isMemberPickerVisible}
         onClose={() => setMemberPickerVisible(false)}
         onSelect={handleAssigneeSelect}
       />
       
-      {/* Date/Time Picker Modal */}
       <DateTimePickerModal
         visible={isDatePickerVisible}
         onClose={() => setDatePickerVisible(false)}
         onSave={handleDateSave}
       />
 
-      {/* Comment Bar (static) */}
+      {/* ... (Comment Bar is unchanged) ... */}
       {!isNoteFocused && (
         <View style={styles.commentBar}>
           <TextInput
@@ -385,7 +405,9 @@ const ItemDetailScreen = ({ route }) => {
   );
 };
 
+// ... (Styles are unchanged) ...
 const styles = StyleSheet.create({
+// ... (rest of the file is identical) ...
   container: {
     flex: 1,
     backgroundColor: COLORS.background_modal,
