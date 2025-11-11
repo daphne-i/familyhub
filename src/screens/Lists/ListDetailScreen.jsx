@@ -384,31 +384,34 @@ const styles = StyleSheet.create({
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: SPACING.lg,
+    padding: SPACING.sm, // <--- CHANGED FROM SPACING.lg
     backgroundColor: COLORS.background_light,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    borderRadius: RADII.lg,
+    marginHorizontal: SPACING.md,
+    marginTop: SPACING.lg,
   },
-  sectionIcon: {
-    fontSize: FONT_SIZES.md,
+    sectionIcon: {
+    fontSize: FONT_SIZES.base, // Changed from md to base (14)
   },
   sectionTitle: {
     flex: 1,
-    fontSize: FONT_SIZES.md,
-    fontWeight: '600',
+    fontSize: FONT_SIZES.base, // Changed from md to base (14)
+    fontWeight: 'bold',
     color: COLORS.text_dark,
     marginLeft: SPACING.md,
   },
   sectionCount: {
-    fontSize: FONT_SIZES.md,
+    fontSize: FONT_SIZES.base, // Changed from md to base (14)
     color: COLORS.text_light,
+    fontWeight: 'normal',
     marginRight: SPACING.sm,
   },
+
   // --- List Item (NEW STYLES) ---
   itemWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: SPACING.md,
+    paddingVertical: SPACING.sm,
     paddingHorizontal: SPACING.lg,
     backgroundColor: COLORS.white,
     borderBottomWidth: 1,
@@ -421,7 +424,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   itemText: {
-    fontSize: FONT_SIZES.lg, // Larger font size
+    fontSize: FONT_SIZES.md, // Larger font size
     color: COLORS.text_dark,
   },
   itemTextCompleted: {
