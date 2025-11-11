@@ -16,9 +16,7 @@ import {
   Square,
   User,
   Calendar,
-  Bell,
   Repeat,
-  Image as ImageIcon,
   Type,
 } from 'lucide-react-native';
 import * as theme from '../../utils/theme';
@@ -225,12 +223,6 @@ const AddItemScreen = ({ route }) => {
                 onSave: handleRepeatSave, // Use the new handler
               })
             }
-          />
-
-          {/* ... (Photo Row is unchanged) ... */}
-          <FormRow
-            icon={<ImageIcon size={20} color={COLORS.text_light} />}
-            label="Add photo"
           />
 
           {/* ... (Note Input is unchanged) ... */}

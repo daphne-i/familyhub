@@ -155,8 +155,29 @@ export const updateListItem = async (familyId, listId, itemId, updates) => {
       updatedAt: firestore.FieldValue.serverTimestamp(),
     });
   } catch (error) {
-    console.error('Error updating list item: ', error);
-    throw new Error('Failed to update item. Please try again.');
+    console.error('Error deleting list item: ', error);
+    throw new Error('Failed to delete item. Please try again.');
+  }
+};
+
+/**
+ * Adds a comment to a list item.
+ * @param {string} familyId The family ID.
+ * @param {string} listId The ID of the parent list.
+ * @param {string} itemId The ID of the item.
+ * @param {object} commentData The comment data (text, sentBy, sentAt).
+ */
+export const addItemComment = async (familyId, listId, itemId, commentData) => {
+  if (!familyId || !listId || !itemId || !commentData) {
+    throw new Error('Missing data for addComment');
+  }
+
+  try {
+    const path = `families/${familyId}/lists/${listId}/items/${itemId}/comments`;
+    await firestore().collection(path).add(commentData);
+  } catch (error) {
+    console.error('Error adding comment: ', error);
+    throw new Error('Failed to add comment. Please try again.');
   }
 };
 

@@ -4,10 +4,12 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  ScrollView,
   TextInput,
   ActivityIndicator,
   Alert,
+  FlatList,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -21,31 +23,77 @@ import {
   Bell,
   Repeat,
   ShoppingCart,
-  Image as ImageIcon,
   Type,
   Heart,
+  Send,
 } from 'lucide-react-native';
 import * as theme from '../../utils/theme';
 import {
   useFamilyDocument,
+  useFamilyCollection,
   updateListItem,
   deleteListItem,
+  addItemComment,
 } from '../../services/firestore';
 import { useFamily } from '../../hooks/useFamily';
-import { useAuth } from '../../contexts/AuthContext'; // 1. IMPORT useAuth
+import { useAuth } from '../../contexts/AuthContext';
 import {
   SHOPPING_CATEGORIES,
   TODO_DEFAULT_CATEGORIES,
 } from '../../constants';
-import firestore from '@react-native-firebase/firestore'; // IMPORT FIRESTORE
+import firestore from '@react-native-firebase/firestore';
 
 // Local Components
 import MemberPickerModal from './MemberPickerModal';
+import CategoryPickerModal from './CategoryPickerModal';
 
 // Common Components
 import DateTimePickerModal from '../Common/DateTimePickerModal';
 
 const { COLORS, FONT_SIZES, SPACING, RADII } = theme;
+
+// Comment Item Component
+const CommentItem = ({ comment }) => {
+  const { membersList } = useFamily();
+  
+  const author = useMemo(() => {
+    if (!membersList) return null;
+    return membersList.find(m => m.id === comment.sentBy);
+  }, [membersList, comment.sentBy]);
+
+  const timeAgo = (timestamp) => {
+    if (!timestamp) return '';
+    const seconds = Math.floor((new Date() - timestamp.toDate()) / 1000);
+    
+    if (seconds < 60) return 'A few seconds ago';
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    return `${days}d ago`;
+  };
+
+  return (
+    <View style={styles.commentItem}>
+      <View style={styles.commentAvatar}>
+        <Text style={styles.commentAvatarText}>
+          {author?.displayName?.substring(0, 2).toUpperCase() || 'Da'}
+        </Text>
+      </View>
+      <View style={styles.commentContent}>
+        <View style={styles.commentHeader}>
+          <Text style={styles.commentAuthor}>
+            {author?.displayName || 'User'}
+          </Text>
+          <Text style={styles.commentDivider}>: </Text>
+          <Text style={styles.commentText}>{comment.text}</Text>
+        </View>
+        <Text style={styles.commentTime}>{timeAgo(comment.sentAt)}</Text>
+      </View>
+    </View>
+  );
+};
 
 // ... (DetailHeader, FormRow, format helpers are unchanged) ...
 const DetailHeader = ({ onDelete }) => {
@@ -100,11 +148,9 @@ const formatTime = (date) => {
 
 const ItemDetailScreen = ({ route }) => {
   const navigation = useNavigation();
-  // ... (hooks and route params are unchanged) ...
-  
-  // 2. FIX THE DESTRUCTURING
-  const { familyId, membersList } = useFamily(); // Remove 'user'
-  const { user } = useAuth(); // Get 'user' from useAuth()
+  const insets = useSafeAreaInsets();
+  const { familyId, membersList } = useFamily();
+  const { user } = useAuth();
 
   const { itemId, listId, listType, listName } = route.params;
 
@@ -114,12 +160,28 @@ const ItemDetailScreen = ({ route }) => {
     error,
   } = useFamilyDocument(`lists/${listId}/items/${itemId}`);
 
+  // Fetch comments for this item
+  const {
+    data: comments,
+  } = useFamilyCollection(`lists/${listId}/items/${itemId}/comments`);
+
+  // Sort comments by time
+  const sortedComments = useMemo(() => {
+    if (!comments) return [];
+    return [...comments].sort((a, b) => {
+      if (!a.sentAt || !b.sentAt) return 0;
+      return a.sentAt.toDate() - b.sentAt.toDate();
+    });
+  }, [comments]);
+
   // ... (local state is unchanged) ...
   const [name, setName] = useState('');
   const [note, setNote] = useState('');
-  const [isNoteFocused, setIsNoteFocused] = useState(false);
   const [isMemberPickerVisible, setMemberPickerVisible] = useState(false);
+  const [isCategoryPickerVisible, setCategoryPickerVisible] = useState(false);
   const [isDatePickerVisible, setDatePickerVisible] = useState(false);
+  const [newComment, setNewComment] = useState('');
+  const [isSavingComment, setIsSavingComment] = useState(false);
 
   // ... (useEffect and memos are unchanged) ...
   useEffect(() => {
@@ -148,11 +210,43 @@ const ItemDetailScreen = ({ route }) => {
   }, [item]);
   const formattedDate = dueDate ? formatDate(dueDate) : null;
   const formattedTime = dueDate ? formatTime(dueDate) : null;
-  
-  const lastUpdatedUser = useMemo(() => {
-     if (!item?.updatedBy || !membersList) return user?.displayName || '...';
-     return membersList.find((m) => m.id === item.updatedBy)?.displayName || user?.displayName || '...';
+
+  // Get creator and updater info
+  const creatorName = useMemo(() => {
+    if (!item?.createdBy || !membersList) return user?.displayName || 'Unknown';
+    const creator = membersList.find((m) => m.id === item.createdBy);
+    return creator?.displayName || user?.displayName || 'Unknown';
   }, [item, membersList, user]);
+
+  const updaterName = useMemo(() => {
+    if (!item?.updatedBy || !membersList) return null;
+    const updater = membersList.find((m) => m.id === item.updatedBy);
+    return updater?.displayName || null;
+  }, [item, membersList]);
+
+  const timeAgo = (timestamp) => {
+    if (!timestamp) return '';
+    const date = timestamp.toDate ? timestamp.toDate() : timestamp;
+    const seconds = Math.floor((new Date() - date) / 1000);
+    
+    if (seconds < 60) return 'A few seconds ago';
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes} min ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours} h ago`;
+    const days = Math.floor(hours / 24);
+    return `${days} d ago`;
+  };
+
+  const footerText = useMemo(() => {
+    if (updaterName && item?.updatedAt) {
+      return `Updated ${timeAgo(item.updatedAt)} by ${updaterName}`;
+    }
+    if (item?.createdAt) {
+      return `Created by ${creatorName} - ${timeAgo(item.createdAt)}`;
+    }
+    return `Created by ${creatorName}`;
+  }, [item, creatorName, updaterName]);
 
   // ... (handleToggleComplete, handleFieldUpdate, handleDelete, handleAssigneeSelect are unchanged) ...
   const handleToggleComplete = async () => {
@@ -214,6 +308,19 @@ const ItemDetailScreen = ({ route }) => {
     }
   };
 
+  const handleCategorySelect = async (selectedCategory) => {
+    if (!item) return;
+    setCategoryPickerVisible(false);
+    try {
+      await updateListItem(familyId, listId, itemId, {
+        category: selectedCategory.id,
+        updatedBy: user.uid,
+      });
+    } catch (e) {
+      Alert.alert('Error', 'Failed to update category.');
+    }
+  };
+
   // --- THIS IS THE FIX ---
   const handleDateSave = async (selectedDate) => {
     setDatePickerVisible(false);
@@ -253,6 +360,28 @@ const ItemDetailScreen = ({ route }) => {
     }
   };
 
+  // Add comment handler
+  const handleAddComment = async () => {
+    if (!newComment.trim() || isSavingComment) return;
+    
+    setIsSavingComment(true);
+    const commentData = {
+      text: newComment.trim(),
+      sentBy: user.uid,
+      sentAt: firestore.FieldValue.serverTimestamp(),
+    };
+
+    try {
+      await addItemComment(familyId, listId, itemId, commentData);
+      setNewComment('');
+    } catch (e) {
+      console.error('Comment error:', e);
+      Alert.alert('Error', 'Failed to add comment.');
+    } finally {
+      setIsSavingComment(false);
+    }
+  };
+
   // ... (Render logic is unchanged) ...
   if (loading) {
 // ... (rest of the file is identical) ...
@@ -272,10 +401,19 @@ const ItemDetailScreen = ({ route }) => {
   }
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView 
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}>
       <DetailHeader onDelete={handleDelete} />
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.formCard}>
+      
+      <FlatList
+        data={sortedComments}
+        keyExtractor={(comment) => comment.id}
+        renderItem={({ item: comment }) => <CommentItem comment={comment} />}
+        ListHeaderComponent={(
+          <>
+          <View style={styles.formCard}>
           {/* ... (Title Input is unchanged) ... */}
           <View style={[styles.formRow, styles.inputRow]}>
             <TouchableOpacity onPress={handleToggleComplete}>
@@ -298,7 +436,7 @@ const ItemDetailScreen = ({ route }) => {
             icon={<Text style={styles.iconText}>{category?.icon}</Text>}
             label="Category"
             value={category?.name}
-            // TODO: Add onPress to open category picker
+            onPress={() => setCategoryPickerVisible(true)}
           />
           {/* ... (List is unchanged) ... */}
           <FormRow
@@ -316,8 +454,6 @@ const ItemDetailScreen = ({ route }) => {
               value={note}
               onChangeText={setNote}
               onEndEditing={() => handleFieldUpdate('note', note)}
-              onFocus={() => setIsNoteFocused(true)}
-              onBlur={() => setIsNoteFocused(false)}
             />
           </View>
 
@@ -357,28 +493,53 @@ const ItemDetailScreen = ({ route }) => {
               })
             }
           />
-
-          {/* ... (Photo Row is unchanged) ... */}
-          <FormRow
-            icon={<ImageIcon size={20} color={COLORS.text_light} />}
-            label="Add photo"
-          />
         </View>
 
-        {/* ... (Favorite Button is unchanged) ... */}
+        {/* Footer */}
         <View style={styles.footerActions}>
           <TouchableOpacity>
             <Heart size={24} color={COLORS.text_light} />
           </TouchableOpacity>
         </View>
 
-        {/* ... (Footer Text is unchanged) ... */}
         <Text style={styles.footerText}>
-          Updated 4 min ago by {lastUpdatedUser}
+          {footerText}
         </Text>
-      </ScrollView>
+        </>
+        )}
+        contentContainerStyle={styles.scrollContent}
+      />
 
-      {/* ... (Modals are unchanged) ... */}
+      {/* Comment Input Bar */}
+      <View style={[styles.commentBar, { paddingBottom: insets.bottom || SPACING.md }]}>
+        <TextInput
+          style={styles.commentInput}
+          placeholder="Add a comment..."
+          placeholderTextColor={COLORS.text_light}
+          value={newComment}
+          onChangeText={setNewComment}
+          multiline
+        />
+        <TouchableOpacity 
+          style={styles.sendButton} 
+          onPress={handleAddComment}
+          disabled={isSavingComment || !newComment.trim()}>
+          {isSavingComment ? (
+            <ActivityIndicator size="small" color={COLORS.white} />
+          ) : (
+            <Send size={20} color={COLORS.white} />
+          )}
+        </TouchableOpacity>
+      </View>
+
+      {/* Modals */}
+      <CategoryPickerModal
+        visible={isCategoryPickerVisible}
+        onClose={() => setCategoryPickerVisible(false)}
+        onSelect={handleCategorySelect}
+        listType={listType}
+      />
+      
       <MemberPickerModal
         visible={isMemberPickerVisible}
         onClose={() => setMemberPickerVisible(false)}
@@ -390,18 +551,7 @@ const ItemDetailScreen = ({ route }) => {
         onClose={() => setDatePickerVisible(false)}
         onSave={handleDateSave}
       />
-
-      {/* ... (Comment Bar is unchanged) ... */}
-      {!isNoteFocused && (
-        <View style={styles.commentBar}>
-          <TextInput
-            placeholder="Add a comment..."
-            placeholderTextColor={COLORS.text_light}
-            style={styles.commentInput}
-          />
-        </View>
-      )}
-    </View>
+    </KeyboardAvoidingView>
   );
 };
 
@@ -496,23 +646,82 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontSize: FONT_SIZES.sm,
     color: COLORS.text_light,
+    marginBottom: SPACING.lg,
+  },
+  // --- Comment Item ---
+  commentItem: {
+    flexDirection: 'row',
+    padding: SPACING.lg,
+    backgroundColor: COLORS.white,
+  },
+  commentAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLORS.orange,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: SPACING.md,
+  },
+  commentAvatarText: {
+    color: COLORS.white,
+    fontSize: FONT_SIZES.md,
+    fontWeight: 'bold',
+  },
+  commentContent: {
+    flex: 1,
+  },
+  commentHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: SPACING.xs,
+  },
+  commentAuthor: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: 'bold',
+    color: COLORS.text_dark,
+  },
+  commentDivider: {
+    fontSize: FONT_SIZES.md,
+    color: COLORS.text_dark,
+  },
+  commentText: {
+    flex: 1,
+    fontSize: FONT_SIZES.md,
+    color: COLORS.text_dark,
+  },
+  commentTime: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.text_light,
+    marginTop: SPACING.xs,
   },
   // --- Comment Bar ---
   commentBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: COLORS.white,
     borderTopWidth: 1,
     borderTopColor: COLORS.border,
     padding: SPACING.md,
   },
   commentInput: {
+    flex: 1,
     backgroundColor: COLORS.background_light,
     borderRadius: RADII.lg,
     padding: SPACING.md,
+    paddingTop: SPACING.md,
     fontSize: FONT_SIZES.md,
+    color: COLORS.text_dark,
+    maxHeight: 100,
+  },
+  sendButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLORS.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: SPACING.md,
   },
 });
 
