@@ -20,7 +20,8 @@ import {
   Type,
 } from 'lucide-react-native';
 import * as theme from '../../utils/theme';
-import { addItemToList } from '../../services/firestore';
+import { addListItem } from '../../services/firestore';
+import firestore from '@react-native-firebase/firestore';
 import { useAuth } from '../../contexts/AuthContext';
 import { useFamily } from '../../hooks/useFamily';
 import {
@@ -139,35 +140,35 @@ const AddItemScreen = ({ route }) => {
   };
 
   // ... (handleSave logic is unchanged) ...
-  const handleSave = async () => {
-    if (!name) {
-      setError('Item name is required.');
-      return;
-    }
-    setLoading(true);
-    setError(null);
+  const handleSave = async () => {
+    if (!name) {
+      setError('Item name is required.');
+      return;
+    }
+    setLoading(true);
+    setError(null);
 
-    const newItem = {
-      name: name,
-      note: note,
-      category: selectedCategory.id,
-      assigneeId: assignee ? assignee.id : null,
-      completed: false,
-      createdBy: user.uid,
-      dueDate: dueDate,
+    const newItem = {
+      name: name,
+      familyId: familyId,
+      note: note,
+      category: selectedCategory.id,
+      assigneeId: assignee ? assignee.id : null,
+      completed: false,
+      createdBy: user.uid,
+      // --- FIX 1: Convert JS Date to Firestore Timestamp ---
+      dueDate: dueDate ? firestore.Timestamp.fromDate(dueDate) : null,
       repeat: repeat,
     };
 
     try {
-      await addItemToList(familyId, listId, newItem);
+      // --- FIX 2: Use the correct function name ---
+      await addListItem(familyId, listId, newItem);
       navigation.goBack();
-    } catch (e) {
-      setError(e.message);
+    } catch (e) {      setError(e.message);
       setLoading(false);
     }
-  };
-
-  const formattedDate = dueDate ? formatDate(dueDate) : null;
+  };  const formattedDate = dueDate ? formatDate(dueDate) : null;
   const formattedTime = dueDate ? formatTime(dueDate) : null;
 
   return (
