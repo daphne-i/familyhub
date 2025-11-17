@@ -64,7 +64,7 @@ export const useFamilyCollection = (collectionPath) => {
 };
 
 /**
- * --- NEW COLLECTION GROUP HOOK ---
+ * --- UPDATED COLLECTION GROUP HOOK ---
  * A hook to get all documents from a collection group (e.g., all 'items')
  * @param {string} collectionId The ID of the collection group (e.g., 'items')
  * @param {Date} startDate The date to query from
@@ -94,7 +94,18 @@ export const useFamilyCollectionGroup = (collectionId, startDate) => {
         (querySnapshot) => {
           const collectionData = [];
           querySnapshot.forEach((doc) => {
-            collectionData.push({ id: doc.id, ...doc.data() });
+            // --- THIS IS THE FIX ---
+            // The path is 'families/{familyId}/lists/{listId}/items/{itemId}'
+            // We split by '/' and get the listId, which is at index 3
+            const pathParts = doc.ref.path.split('/');
+            const listId = pathParts.length > 3 ? pathParts[3] : null;
+            // --- END FIX ---
+
+            collectionData.push({ 
+              id: doc.id, 
+              listId: listId, // Add the listId to the object
+              ...doc.data() 
+            });
           });
           
           setData((prevData) => {

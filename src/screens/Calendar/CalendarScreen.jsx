@@ -16,10 +16,15 @@ import { CalendarList } from 'react-native-calendars';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Home, Plus, CheckSquare, Square } from 'lucide-react-native';
 import * as theme from '../../utils/theme';
-import { useFamilyCollection, useFamilyCollectionGroup } from '../../services/firestore';
+import { 
+  useFamilyCollection, 
+  useFamilyCollectionGroup,
+  updateListItem, // 1. Import updateListItem
+} from '../../services/firestore';
 import { expandRecurringEvents } from '../../utils/calendarHelpers';
 import { addYears, subMonths, startOfDay } from 'date-fns';
 import MemberAvatar from '../Common/MemberAvatar';
+import { useFamily } from '../../hooks/useFamily'; // 2. Import useFamily
 
 const { COLORS, FONT_SIZES, SPACING, RADII } = theme;
 
@@ -53,8 +58,8 @@ const EventItem = ({ event, onPress, onLongPress }) => {
   );
 };
 
-// --- NEW Task Item ---
-const TaskItem = ({ item, onPress }) => {
+// --- UPDATED Task Item ---
+const TaskItem = ({ item, onPress, onToggleComplete }) => {
   const itemDueDate = item.dueDate ? item.dueDate.toDate() : null;
   const timeString = itemDueDate
     ? itemDueDate.toLocaleTimeString(undefined, {
@@ -70,11 +75,13 @@ const TaskItem = ({ item, onPress }) => {
       </View>
       <View style={styles.itemContent}>
         <View style={styles.taskMainRow}>
-          {item.completed ? (
-            <CheckSquare size={20} color={COLORS.text_dark} />
-          ) : (
-            <Square size={20} color={COLORS.text_dark} />
-          )}
+          <TouchableOpacity onPress={onToggleComplete} style={styles.taskCheckbox}>
+            {item.completed ? (
+              <CheckSquare size={20} color={COLORS.text_dark} />
+            ) : (
+              <Square size={20} color={COLORS.text_dark} />
+            )}
+          </TouchableOpacity>
           <Text style={styles.taskTitle}>{item.name}</Text>
         </View>
         {item.assigneeId && (
@@ -107,6 +114,7 @@ const generateDateRange = (startDate) => {
 const CalendarScreen = () => {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+  const { familyId } = useFamily(); // 3. Get familyId
   
   // 1. Fetch Calendar Events
   const { data: events, loading: loadingEvents } = useFamilyCollection('calendar');
@@ -117,8 +125,20 @@ const CalendarScreen = () => {
     loading: loadingTasks 
   } = useFamilyCollectionGroup(
     'items', 
-    startOfDay(subMonths(new Date(), 3)) // Get tasks from 3 months ago
+    startOfDay(subMonths(new Date(), 3))
   );
+  
+  // 4. Fetch Lists to get their names
+  const { data: lists } = useFamilyCollection('lists');
+  const listNameMap = useMemo(() => {
+    if (!lists) return new Map();
+    return new Map(lists.map(list => [list.id, list.name]));
+  }, [lists]);
+  const listTypeMap = useMemo(() => {
+    if (!lists) return new Map();
+    return new Map(lists.map(list => [list.id, list.type]));
+  }, [lists]);
+
 
   const [selectedDate, setSelectedDate] = useState(toDateString(new Date()));
   const [currentMonth, setCurrentMonth] = useState(
@@ -132,7 +152,7 @@ const CalendarScreen = () => {
     return generateDateRange(selectedDate);
   }, [selectedDate]);
 
-  // 3. --- COMBINE Events and Tasks ---
+  // 5. --- COMBINE Events and Tasks ---
   const { markedDates, groupedItems } = useMemo(() => {
     const marks = {};
     const groups = {};
@@ -150,7 +170,7 @@ const CalendarScreen = () => {
       
       allOccurrences.forEach((occurrence) => {
         const dateStr = toDateString(occurrence.occurrenceDate);
-        const color = occurrence.color || COLORS.primary;
+        const color = occurrence.color || COLORS.orange;
         
         if (!groups[dateStr]) groups[dateStr] = [];
         groups[dateStr].push({ type: 'event', data: occurrence });
@@ -170,9 +190,9 @@ const CalendarScreen = () => {
     // --- Process Tasks ---
     if (tasks) {
       tasks.forEach((task) => {
-        if (!task.dueDate) return; // Skip tasks without a due date
+        if (!task.dueDate) return;
         const dateStr = toDateString(task.dueDate.toDate());
-        const color = COLORS.primary_light; // Use a specific color for tasks
+        const color = COLORS.green; // 6. SET TASK COLOR TO GREEN
         
         if (!groups[dateStr]) groups[dateStr] = [];
         groups[dateStr].push({ type: 'task', data: task });
@@ -219,15 +239,29 @@ const CalendarScreen = () => {
     navigation.navigate('NewEvent', { eventId: event.originalId });
   };
   
+  // 7. --- UPDATE handleEditTask ---
   const handleEditTask = (task) => {
-    // Navigate to the ItemDetailScreen
-    // Note: We need to find the listId for the task, which we don't have.
-    // This is a limitation of collectionGroup.
-    // For now, just show an alert.
-    Alert.alert(
-      'View Task',
-      `Task: ${task.name}\n\n(Editing tasks from the calendar is coming soon!)`
-    );
+    if (!task.listId) {
+      Alert.alert('Error', 'Cannot find the list for this task.');
+      return;
+    }
+    
+    const listName = listNameMap.get(task.listId) || 'List';
+    const listType = listTypeMap.get(task.listId) || 'todo';
+
+    navigation.push('ItemDetail', {
+      itemId: task.id,
+      listId: task.listId,
+      listName: listName,
+      listType: listType,
+    });
+  };
+  
+  const handleToggleTask = (task) => {
+    if (!task.listId) return;
+    updateListItem(familyId, task.listId, task.id, {
+      completed: !task.completed,
+    });
   };
 
   const handleMonthJump = (event, newDate) => {
@@ -350,6 +384,7 @@ const CalendarScreen = () => {
                           key={item.data.id}
                           item={item.data}
                           onPress={() => handleEditTask(item.data)}
+                          onToggleComplete={() => handleToggleTask(item.data)}
                         />
                       );
                     }
@@ -438,9 +473,9 @@ const styles = StyleSheet.create({
   eventCard: {
     backgroundColor: COLORS.orange,
   },
-  // --- NEW Task Card Style ---
+  // --- 8. TASK CARD STYLE UPDATES ---
   taskCard: {
-    backgroundColor: COLORS.orange_light,
+    backgroundColor: COLORS.green_light, // Changed to green_light
   },
   itemTimeContainer: {
     padding: SPACING.md,
@@ -451,7 +486,7 @@ const styles = StyleSheet.create({
     minWidth: 75,
   },
   taskTimeContainer: {
-    borderRightColor: 'rgba(255,200,100,0.5)',
+    borderRightColor: 'rgba(16, 185, 129, 0.3)', // Green-based border
   },
   itemTime: {
     color: COLORS.white,
@@ -459,7 +494,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   taskTime: {
-    color: COLORS.orange, // Darker text for light card
+    color: COLORS.green, // Changed to green
     fontSize: FONT_SIZES.sm,
     fontWeight: '600',
   },
@@ -477,8 +512,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
+  taskCheckbox: {
+    paddingRight: SPACING.sm, // Add padding to make checkbox easier to tap
+  },
   taskTitle: {
-    color: COLORS.text_dark, // Dark text
+    color: COLORS.text_dark,
     fontSize: FONT_SIZES.md,
     fontWeight: 'bold',
     marginLeft: SPACING.sm,
@@ -487,7 +525,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: SPACING.sm,
-    paddingLeft: SPACING.md,
+    paddingLeft: SPACING.md, // Align with checkbox
   },
   fab: {
     position: 'absolute',
