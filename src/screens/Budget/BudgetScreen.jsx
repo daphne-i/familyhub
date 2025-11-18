@@ -24,6 +24,7 @@ import {
 } from 'lucide-react-native';
 import * as theme from '../../utils/theme';
 import { useFamilyCollection, useBudget } from '../../services/firestore';
+import MemberAvatar from '../Common/MemberAvatar'; // Import MemberAvatar
 
 const { COLORS, FONT_SIZES, SPACING, RADII } = theme;
 
@@ -55,9 +56,8 @@ const SummaryCard = ({ budgetData, loading }) => {
     );
   }
 
-  // Default values if no data
   const spent = budgetData?.totalSpent || 0;
-  const budgetLimit = 20000; // TODO: Make this user-editable later
+  const budgetLimit = 20000; // TODO: Make editable
   const left = budgetLimit - spent;
   const percent = Math.min(Math.max((spent / budgetLimit) * 100, 0), 100);
 
@@ -129,13 +129,6 @@ const ViewToggle = ({ currentView, setView }) => {
   );
 };
 
-// --- Helper for Emoji Icons ---
-const getCategoryIcon = (iconName) => {
-  // Map lucide icon names to emojis for the list (simplification)
-  // In a real app, you'd map these to Lucide icons dynamically
-  return '🏷️'; 
-};
-
 // --- Main Screen ---
 const BudgetScreen = () => {
   const navigation = useNavigation();
@@ -153,8 +146,6 @@ const BudgetScreen = () => {
   const { data: budgetData, loading: loadingBudget } = useBudget(monthId);
 
   // 3. Fetch Transactions
-  // Note: In a real app, you'd filter this query by month using startAt/endAt
-  // For MVP, we'll just fetch all and filter locally
   const { data: allTransactions, loading: loadingTx } = useFamilyCollection('transactions');
 
   const filteredTransactions = useMemo(() => {
@@ -171,6 +162,7 @@ const BudgetScreen = () => {
 
 
   // --- Grouping Logic ---
+  
   // Group by Date for "List" view
   const groupedByDate = useMemo(() => {
     const groups = {};
@@ -180,7 +172,6 @@ const BudgetScreen = () => {
         groups[dateStr] = { day: dateStr, total: 0, items: [] };
       }
       groups[dateStr].items.push(tx);
-      // Calculate daily total (expenses only for now)
       if (tx.type === 'Expense') groups[dateStr].total += tx.amount;
     });
     return Object.values(groups);
@@ -198,7 +189,8 @@ const BudgetScreen = () => {
              id: tx.category, 
              title: tx.categoryName || 'Uncategorized',
              amount: 0,
-             icon: '🏷️' // Placeholder
+             // FIX: Use the icon from the transaction
+             icon: tx.categoryIcon || '🔣' 
            };
          }
          groups[tx.category].amount += tx.amount;
@@ -206,8 +198,44 @@ const BudgetScreen = () => {
      });
      return Object.values(groups).map(g => ({
        ...g,
-       percent: `${((g.amount / totalExpense) * 100).toFixed(0)}% of expenses`
+       percent: totalExpense > 0 ? `${((g.amount / totalExpense) * 100).toFixed(0)}%` : '0%'
      })).sort((a, b) => b.amount - a.amount);
+  }, [filteredTransactions]);
+
+  // Group by Member
+  const groupedByMember = useMemo(() => {
+    const groups = {};
+    let totalExpense = 0;
+    filteredTransactions.forEach(tx => {
+      if (tx.type === 'Expense') {
+        totalExpense += tx.amount;
+        const memberId = tx.paidBy || 'unknown';
+        if (!groups[memberId]) {
+          groups[memberId] = { id: memberId, amount: 0 };
+        }
+        groups[memberId].amount += tx.amount;
+      }
+    });
+    return Object.values(groups).map(g => ({
+      ...g,
+      percent: totalExpense > 0 ? `${((g.amount / totalExpense) * 100).toFixed(0)}%` : '0%'
+    })).sort((a, b) => b.amount - a.amount);
+  }, [filteredTransactions]);
+
+  // Group by Account
+  const groupedByAccount = useMemo(() => {
+    const groups = {};
+    filteredTransactions.forEach(tx => {
+      if (tx.type === 'Expense') {
+        const accName = tx.accountName || 'Cash';
+        if (!groups[accName]) {
+          // FIX: Use the icon from the transaction
+          groups[accName] = { name: accName, amount: 0, icon: tx.accountIcon || '💵' }; 
+        }
+        groups[accName].amount += tx.amount;
+      }
+    });
+    return Object.values(groups).sort((a, b) => b.amount - a.amount);
   }, [filteredTransactions]);
 
 
@@ -227,6 +255,8 @@ const BudgetScreen = () => {
     });
   };
 
+  // --- RENDER FUNCTIONS ---
+
   const renderList = () => (
     <FlatList
       data={groupedByDate}
@@ -241,7 +271,8 @@ const BudgetScreen = () => {
           {item.items.map(tx => (
             <View key={tx.id} style={styles.txRow}>
               <View style={styles.txIconContainer}>
-                <Text style={styles.txIcon}>💰</Text> 
+                {/* FIX: Display the Category Icon here */}
+                <Text style={styles.txIcon}>{tx.categoryIcon || '💰'}</Text> 
               </View>
               <View style={styles.txRowCenter}>
                 <Text style={styles.txTitle}>{tx.title}</Text>
@@ -261,7 +292,7 @@ const BudgetScreen = () => {
     <FlatList
       data={groupedByCategory}
       keyExtractor={item => item.id}
-      ListHeaderComponent={<Text style={styles.listHeaderTitle}>Expenses by category</Text>}
+      ListHeaderComponent={<Text style={styles.listHeaderTitle}>Expenses by Category</Text>}
       renderItem={({ item }) => (
         <View style={styles.txRow}>
           <View style={styles.txIconContainer}>
@@ -269,21 +300,60 @@ const BudgetScreen = () => {
           </View>
           <View style={styles.txRowCenter}>
             <Text style={styles.txTitle}>{item.title}</Text>
-            <Text style={styles.txSubtitle}>{item.percent}</Text>
+            <Text style={styles.txSubtitle}>{item.percent} of expenses</Text>
           </View>
           <Text style={[styles.txAmount, styles.txExpense]}>₹{item.amount.toFixed(2)}</Text>
         </View>
       )}
     />
   );
+
+  const renderMembers = () => (
+    <FlatList
+     data={groupedByMember}
+     keyExtractor={item => item.id}
+     ListHeaderComponent={<Text style={styles.listHeaderTitle}>Expenses by Member</Text>}
+     renderItem={({ item }) => (
+       <View style={styles.txRow}>
+         <View style={{ marginRight: 12 }}> 
+            <MemberAvatar memberId={item.id} />
+         </View>
+         <View style={styles.txRowCenter}>
+           <Text style={styles.txTitle}>Member</Text> 
+           <Text style={styles.txSubtitle}>{item.percent} of expenses</Text>
+         </View>
+         <Text style={[styles.txAmount, styles.txExpense]}>₹{item.amount.toFixed(2)}</Text>
+       </View>
+     )}
+   />
+ );
+
+ const renderAccounts = () => (
+   <FlatList
+     data={groupedByAccount}
+     keyExtractor={item => item.name}
+     ListHeaderComponent={<Text style={styles.listHeaderTitle}>Expenses by Account</Text>}
+     renderItem={({ item }) => (
+       <View style={styles.txRow}>
+          <View style={styles.txIconContainer}>
+           <Text style={styles.txIcon}>{item.icon}</Text>
+         </View>
+         <View style={styles.txRowCenter}>
+           <Text style={styles.txTitle}>{item.name}</Text>
+         </View>
+         <Text style={[styles.txAmount, styles.txExpense]}>₹{item.amount.toFixed(2)}</Text>
+       </View>
+     )}
+   />
+ );
   
   const renderContent = () => {
     if (loadingTx) return <ActivityIndicator style={{marginTop: 20}} color={COLORS.primary} />;
     
     if (currentView === 'Categories') return renderCategories();
-    // if (currentView === 'Members') return renderMembers();
-    // if (currentView === 'Accounts') return renderAccounts();
-    return renderList(); // Default to 'List' view
+    if (currentView === 'Members') return renderMembers();
+    if (currentView === 'Accounts') return renderAccounts();
+    return renderList(); 
   };
 
   return (
@@ -309,7 +379,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background_white,
   },
-  // --- Header ---
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -323,7 +392,6 @@ const styles = StyleSheet.create({
     width: 40,
     alignItems: 'center',
   },
-  // --- Summary Card ---
   summaryCard: {
     backgroundColor: COLORS.primary,
     padding: SPACING.lg,
@@ -367,7 +435,6 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
     borderRadius: 4,
   },
-  // --- Month Selector ---
   monthSelector: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -382,13 +449,12 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: COLORS.text_dark,
   },
-  // --- View Toggle ---
   viewToggle: {
     flexDirection: 'row',
     paddingHorizontal: SPACING.lg,
     paddingVertical: SPACING.sm,
     backgroundColor: COLORS.white,
-    maxHeight: 60, // Constrain height
+    maxHeight: 60, 
   },
   toggleButton: {
     flexDirection: 'row',
@@ -419,7 +485,6 @@ const styles = StyleSheet.create({
   toggleActiveText: {
     color: COLORS.primary,
   },
-  // --- List ---
   listHeaderTitle: {
     fontSize: FONT_SIZES.md,
     color: COLORS.text_light,
@@ -465,7 +530,8 @@ const styles = StyleSheet.create({
     marginRight: SPACING.md,
   },
   txIcon: {
-    fontSize: 20,
+    fontSize: 22, // Increased font size for emojis
+    color: COLORS.text_dark,
   },
   txRowCenter: {
     flex: 1,
@@ -495,7 +561,6 @@ const styles = StyleSheet.create({
     color: COLORS.text_light,
     fontSize: FONT_SIZES.md,
   },
-  // --- FAB ---
   fab: {
     position: 'absolute',
     bottom: SPACING.xl,

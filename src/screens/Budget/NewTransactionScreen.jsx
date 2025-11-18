@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   ScrollView,
   TextInput,
-  Switch,
   ActivityIndicator,
   Alert,
 } from 'react-native';
@@ -18,12 +17,9 @@ import {
   ChevronDown,
   ArrowUp,
   ArrowDown,
-  Tag,
   User,
-  Banknote,
   Calendar,
   Repeat,
-  Info,
   Type,
 } from 'lucide-react-native';
 import * as theme from '../../utils/theme';
@@ -34,11 +30,14 @@ import DateTimePickerModal from '../Common/DateTimePickerModal';
 import firestore from '@react-native-firebase/firestore';
 import { useFamily } from '../../hooks/useFamily';
 import { useAuth } from '../../contexts/AuthContext';
-import { addTransaction } from '../../services/firestore'; // 1. Import function
+import { addTransaction } from '../../services/firestore';
 
 const { COLORS, FONT_SIZES, SPACING, RADII } = theme;
 
-// ... (ModalHeader, FormRow components are unchanged) ...
+// Define specific colors for transaction types
+const COLOR_EXPENSE = '#E91E63'; // Pinkish Red
+const COLOR_INCOME = '#10B981';  // Green
+
 const ModalHeader = ({ onSave, loading }) => {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
@@ -65,12 +64,24 @@ const ModalHeader = ({ onSave, loading }) => {
   );
 };
 
-const FormRow = ({ icon, text, onPress, value }) => {
+// Updated FormRow to handle background colors for icons
+const FormRow = ({ icon, emoji, text, onPress, value, iconColor, iconBackgroundColor }) => {
   const IconComponent = icon;
+  
   return (
     <TouchableOpacity style={styles.formRow} onPress={onPress}>
-      <View style={styles.iconContainer}>
-        <IconComponent size={22} color={COLORS.text_dark} />
+      <View style={[
+        styles.iconContainer, 
+        iconBackgroundColor && { backgroundColor: iconBackgroundColor } 
+      ]}>
+        {emoji ? (
+          <Text style={styles.emojiText}>{emoji}</Text>
+        ) : (
+          <IconComponent 
+            size={20} 
+            color={iconColor || COLORS.text_dark} 
+          />
+        )}
       </View>
       <Text style={styles.rowText}>{text}</Text>
       {value && <Text style={styles.rowValue}>{value}</Text>}
@@ -87,13 +98,13 @@ const NewTransactionScreen = () => {
   const { user } = useAuth();
 
   const [type, setType] = useState('Expense');
-  const [amount, setAmount] = useState(''); // Use string for input
+  const [amount, setAmount] = useState('');
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState(null);
   const [account, setAccount] = useState(null);
   const [paidBy, setPaidBy] = useState(null);
   const [date, setDate] = useState(new Date());
-  const [isPaid, setIsPaid] = useState(true);
+  // Removed isPaid state
   const [repeat, setRepeat] = useState('One time only');
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
@@ -102,6 +113,8 @@ const NewTransactionScreen = () => {
   const [isAccountPickerVisible, setAccountPickerVisible] = useState(false);
   const [isMemberPickerVisible, setMemberPickerVisible] = useState(false);
   const [isDatePickerVisible, setDatePickerVisible] = useState(false);
+
+  const activeColor = type === 'Expense' ? COLOR_EXPENSE : COLOR_INCOME;
 
   const handleSave = async () => {
     if (!amount || isNaN(parseFloat(amount))) {
@@ -120,13 +133,14 @@ const NewTransactionScreen = () => {
       amount: parseFloat(amount),
       title,
       category: category ? category.id : 'misc',
-      categoryName: category ? category.name : 'Miscellaneous', // Denormalize for easy display
-      categoryIcon: category ? category.icon : 'MoreHorizontal',
+      categoryName: category ? category.name : 'Miscellaneous',
+      categoryIcon: category ? category.icon : '🔣',
       accountId: account ? account.id : 'cash',
       accountName: account ? account.name : 'Cash',
+      accountIcon: account ? account.icon : '💵',
       paidBy: paidBy ? paidBy.id : user.uid,
       date: firestore.Timestamp.fromDate(date),
-      isPaid,
+      isPaid: true, // Defaulting to true since field was removed
       repeat,
       note,
       createdBy: user.uid,
@@ -147,12 +161,13 @@ const NewTransactionScreen = () => {
       
       <ScrollView>
         <View style={styles.amountContainer}>
-          <Text style={styles.currencySymbol}>₹</Text>
+          <Text style={[styles.currencySymbol, { color: activeColor }]}>₹</Text>
           <TextInput
-            style={styles.amountInput}
+            style={[styles.amountInput, { color: activeColor }]}
             value={amount}
             onChangeText={setAmount}
             placeholder="0.00"
+            placeholderTextColor={activeColor + '80'} 
             keyboardType="numeric"
             autoFocus
           />
@@ -169,24 +184,30 @@ const NewTransactionScreen = () => {
           
           <FormRow
             icon={type === 'Expense' ? ArrowUp : ArrowDown}
+            iconColor={COLORS.white}
+            iconBackgroundColor={activeColor}
             text={type}
             onPress={() => setType(type === 'Expense' ? 'Income' : 'Expense')}
           />
+          
           <FormRow
-            icon={Tag}
+            emoji={category ? category.icon : '🏷️'}
             text={category ? category.name : 'Category'}
             onPress={() => setCategoryPickerVisible(true)}
           />
+
           <FormRow
             icon={User}
             text={paidBy ? paidBy.displayName : (type === 'Expense' ? 'Paid by' : 'Received by')}
             onPress={() => setMemberPickerVisible(true)}
           />
+
           <FormRow
-            icon={Banknote}
+            emoji={account ? account.icon : '💵'}
             text={account ? account.name : 'Account'}
             onPress={() => setAccountPickerVisible(true)}
           />
+
           <FormRow
             icon={Calendar}
             text={date.toLocaleDateString()}
@@ -195,17 +216,8 @@ const NewTransactionScreen = () => {
         </View>
         
         <View style={styles.card}>
-          <View style={styles.switchRow}>
-            <View style={styles.switchRowLeft}>
-              <Info size={20} color={COLORS.text_light} style={styles.rowIcon} />
-              <Text style={styles.rowText}>Mark as paid</Text>
-            </View>
-            <Switch
-              value={isPaid}
-              onValueChange={setIsPaid}
-              trackColor={{ false: COLORS.border, true: COLORS.primary }}
-            />
-          </View>
+           {/* Removed the "Mark as paid" Switch Row */}
+           
            <FormRow
             icon={Repeat}
             text="Repeat"
@@ -257,7 +269,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background_modal,
   },
-  // --- Header ---
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -274,25 +285,21 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: COLORS.text_dark,
   },
-  // --- Amount ---
   amountContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: SPACING.lg,
+    paddingVertical: SPACING.xl,
     backgroundColor: COLORS.white,
   },
   currencySymbol: {
     fontSize: 40,
-    color: COLORS.text_light,
     marginRight: SPACING.sm,
   },
   amountInput: {
     fontSize: 50,
     fontWeight: 'bold',
-    color: COLORS.text_dark,
   },
-  // --- Card ---
   card: {
     backgroundColor: COLORS.white,
     borderRadius: RADII.lg,
@@ -315,8 +322,16 @@ const styles = StyleSheet.create({
     borderBottomColor: COLORS.border,
   },
   iconContainer: {
-    width: 30,
+    width: 32,
+    height: 32, 
+    borderRadius: 16, 
     alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: SPACING.lg,
+  },
+  emojiText: {
+    fontSize: 22,
+    color: COLORS.text_dark,
   },
   rowIcon: {
     marginRight: SPACING.lg,
@@ -333,18 +348,6 @@ const styles = StyleSheet.create({
   },
   rowArrow: {
     marginLeft: 'auto',
-  },
-  switchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: SPACING.lg,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
-  },
-  switchRowLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
   },
   noteInput: {
     height: 100,

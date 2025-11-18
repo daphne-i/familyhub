@@ -15,7 +15,7 @@ import {
   DEFAULT_INCOME_CATEGORIES,
 } from '../../constants';
 
-const { COLORS, FONT_SIZES, SPACING, RADII } = theme;
+const { COLORS, FONT_SIZES, SPACING } = theme;
 
 const BudgetCategoryPicker = ({
   visible,
@@ -28,8 +28,8 @@ const BudgetCategoryPicker = ({
       ? DEFAULT_INCOME_CATEGORIES
       : DEFAULT_EXPENSE_CATEGORIES;
 
-  // Add a "New" button
-  const data = [...categories, { id: 'new', name: 'New', icon: 'Plus' }];
+  // Add a "New" button with a special ID
+  const data = [...categories, { id: 'new', name: 'New', icon: 'plus' }];
 
   const renderItem = ({ item }) => (
     <TouchableOpacity
@@ -44,12 +44,14 @@ const BudgetCategoryPicker = ({
           item.id === 'new' && styles.iconContainerNew,
         ]}>
         {item.id === 'new' ? (
-          <Plus size={24} color={COLORS.text} />
+          <Plus size={28} color={COLORS.text_dark} />
         ) : (
-          <Text style={styles.iconText}>{item.icon}</Text> // Placeholder
+          <Text style={styles.emojiIcon}>{item.icon}</Text>
         )}
       </View>
-      <Text style={styles.itemText}>{item.name}</Text>
+      <Text style={styles.itemText} numberOfLines={2}>
+        {item.name}
+      </Text>
     </TouchableOpacity>
   );
 
@@ -58,7 +60,7 @@ const BudgetCategoryPicker = ({
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
           <Text style={styles.headerTitle}>
-            Pick a {type.toLowerCase()} category
+            Pick a {type ? type.toLowerCase() : 'category'}
           </Text>
           <TouchableOpacity onPress={onClose} style={styles.closeButton}>
             <X size={24} color={COLORS.primary} />
@@ -103,28 +105,30 @@ const styles = StyleSheet.create({
   itemContainer: {
     width: '25%', // 4 columns
     alignItems: 'center',
-    padding: SPACING.md,
-    marginBottom: SPACING.sm,
+    padding: SPACING.xs,
+    marginBottom: SPACING.md,
   },
   iconContainer: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     backgroundColor: COLORS.background_light,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: SPACING.sm,
+    marginBottom: SPACING.xs,
   },
   iconContainerNew: {
     backgroundColor: COLORS.border,
   },
-  iconText: {
-    fontSize: 24, // For emoji
+  emojiIcon: {
+    fontSize: 28, 
+    color: COLORS.text_dark, 
   },
   itemText: {
     fontSize: FONT_SIZES.sm,
     color: COLORS.text_dark,
     textAlign: 'center',
+    height: 32,
   },
 });
 

@@ -360,10 +360,8 @@ export const deleteCalendarEvent = async (familyId, eventId) => {
   }
 };
 
-// --- NEW BUDGET FUNCTION ---
-
 /**
- * Adds a new transaction to the budget.
+ * Adds a new transaction AND updates the monthly budget summary atomically.
  * @param {string} familyId The family ID.
  * @param {object} transactionData The transaction data.
  */
@@ -372,14 +370,103 @@ export const addTransaction = async (familyId, transactionData) => {
     throw new Error('Missing data for addTransaction');
   }
 
+  const { date, amount, type } = transactionData;
+  
+  // 1. Determine the Month ID (YYYY-MM)
+  // We need to convert the Firestore Timestamp to a JS Date if it isn't already
+  const dateObj = date.toDate ? date.toDate() : date; 
+  const year = dateObj.getFullYear();
+  const month = (dateObj.getMonth() + 1).toString().padStart(2, '0'); // "01", "11"
+  const budgetId = `${year}-${month}`;
+
+  const budgetRef = firestore().doc(`families/${familyId}/budget/${budgetId}`);
+  const transactionRef = firestore().collection(`families/${familyId}/transactions`).doc();
+
   try {
-    // We use 'transactions' collection. The cloud function will update the budget summary.
-    await addFamilyDoc(familyId, 'transactions', {
-      ...transactionData,
-      createdAt: firestore.FieldValue.serverTimestamp(),
+    await firestore().runTransaction(async (t) => {
+      // 2. Read the current budget doc
+      const budgetDoc = await t.get(budgetRef);
+      let currentSpent = 0;
+      let currentIncome = 0;
+
+      if (budgetDoc.exists) {
+        currentSpent = budgetDoc.data().totalSpent || 0;
+        currentIncome = budgetDoc.data().totalIncome || 0;
+      }
+
+      // 3. Calculate new totals
+      if (type === 'Expense') {
+        currentSpent += amount;
+      } else {
+        currentIncome += amount;
+      }
+
+      // 4. Write the Transaction
+      t.set(transactionRef, { 
+        ...transactionData,
+        date: date, // Ensure this is a Firestore Timestamp or Date
+        createdAt: firestore.FieldValue.serverTimestamp(),
+      });
+
+      // 5. Update the Budget Summary
+      t.set(budgetRef, {
+        totalSpent: currentSpent,
+        totalIncome: currentIncome,
+        month: dateObj.getMonth() + 1,
+        year: year,
+        updatedAt: firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
     });
+    console.log("Transaction added and budget updated successfully!");
   } catch (error) {
     console.error('Error adding transaction: ', error);
     throw new Error('Failed to add transaction. Please try again.');
+  }
+};
+
+/**
+ * Deletes a transaction AND reverts the amount from the budget summary.
+ */
+export const deleteTransaction = async (familyId, transactionId, transactionData) => {
+  if (!familyId || !transactionId || !transactionData) return;
+
+  const { date, amount, type } = transactionData;
+  const dateObj = date.toDate ? date.toDate() : new Date(date);
+  const year = dateObj.getFullYear();
+  const month = (dateObj.getMonth() + 1).toString().padStart(2, '0');
+  const budgetId = `${year}-${month}`;
+
+  const budgetRef = firestore().doc(`families/${familyId}/budget/${budgetId}`);
+  const transactionRef = firestore().doc(`families/${familyId}/transactions/${transactionId}`);
+
+  try {
+    await firestore().runTransaction(async (t) => {
+      const budgetDoc = await t.get(budgetRef);
+      if (!budgetDoc.exists) {
+         // If budget doc is missing, just delete the transaction
+         t.delete(transactionRef);
+         return;
+      }
+
+      let currentSpent = budgetDoc.data().totalSpent || 0;
+      let currentIncome = budgetDoc.data().totalIncome || 0;
+
+      // Revert totals
+      if (type === 'Expense') {
+        currentSpent -= amount;
+      } else {
+        currentIncome -= amount;
+      }
+
+      t.delete(transactionRef);
+      t.update(budgetRef, {
+        totalSpent: currentSpent,
+        totalIncome: currentIncome,
+        updatedAt: firestore.FieldValue.serverTimestamp()
+      });
+    });
+  } catch (error) {
+    console.error('Error deleting transaction: ', error);
+    throw new Error('Failed to delete transaction.');
   }
 };

@@ -10,13 +10,12 @@ import {
 } from 'react-native';
 import { X, Plus } from 'lucide-react-native';
 import * as theme from '../../utils/theme';
-import { DEFAULT_ACCOUNTS } from '../../constants'; // Get default accounts
+import { DEFAULT_ACCOUNTS } from '../../constants';
 
-const { COLORS, FONT_SIZES, SPACING, RADII } = theme;
+const { COLORS, FONT_SIZES, SPACING } = theme;
 
 const AccountPicker = ({ visible, onClose, onSelect }) => {
-  // Add a "New" button
-  const data = [...DEFAULT_ACCOUNTS, { id: 'new', name: 'New', icon: 'Plus' }];
+  const data = [...DEFAULT_ACCOUNTS, { id: 'new', name: 'New', icon: 'plus' }];
 
   const renderItem = ({ item }) => (
     <TouchableOpacity
@@ -31,12 +30,14 @@ const AccountPicker = ({ visible, onClose, onSelect }) => {
           item.id === 'new' && styles.iconContainerNew,
         ]}>
         {item.id === 'new' ? (
-          <Plus size={24} color={COLORS.text} />
+          <Plus size={28} color={COLORS.text_dark} />
         ) : (
-          <Text style={styles.iconText}>{item.icon}</Text> // Placeholder
+          <Text style={styles.emojiIcon}>{item.icon}</Text>
         )}
       </View>
-      <Text style={styles.itemText}>{item.name}</Text>
+      <Text style={styles.itemText} numberOfLines={2}>
+        {item.name}
+      </Text>
     </TouchableOpacity>
   );
 
@@ -61,7 +62,6 @@ const AccountPicker = ({ visible, onClose, onSelect }) => {
   );
 };
 
-// Use the same styles as Category Picker
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -89,28 +89,30 @@ const styles = StyleSheet.create({
   itemContainer: {
     width: '25%', // 4 columns
     alignItems: 'center',
-    padding: SPACING.md,
-    marginBottom: SPACING.sm,
+    padding: SPACING.xs,
+    marginBottom: SPACING.md,
   },
   iconContainer: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     backgroundColor: COLORS.background_light,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: SPACING.sm,
+    marginBottom: SPACING.xs,
   },
   iconContainerNew: {
     backgroundColor: COLORS.border,
   },
-  iconText: {
-    fontSize: 24,
+  emojiIcon: {
+    fontSize: 28,
+    color: COLORS.text_dark,
   },
   itemText: {
     fontSize: FONT_SIZES.sm,
     color: COLORS.text_dark,
     textAlign: 'center',
+    height: 32,
   },
 });
 
