@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,11 +6,12 @@ import {
   TouchableOpacity,
   ScrollView,
   TextInput,
+  Switch,
   ActivityIndicator,
   Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import {
   ArrowLeft,
   Check,
@@ -21,6 +22,7 @@ import {
   Calendar,
   Repeat,
   Type,
+  Trash2, // Import Trash icon
 } from 'lucide-react-native';
 import * as theme from '../../utils/theme';
 import BudgetCategoryPicker from './BudgetCategoryPicker';
@@ -30,15 +32,14 @@ import DateTimePickerModal from '../Common/DateTimePickerModal';
 import firestore from '@react-native-firebase/firestore';
 import { useFamily } from '../../hooks/useFamily';
 import { useAuth } from '../../contexts/AuthContext';
-import { addTransaction } from '../../services/firestore';
+import { addTransaction, updateTransaction, deleteTransaction } from '../../services/firestore';
 
 const { COLORS, FONT_SIZES, SPACING, RADII } = theme;
 
-// Define specific colors for transaction types
-const COLOR_EXPENSE = '#E91E63'; // Pinkish Red
-const COLOR_INCOME = '#10B981';  // Green
+const COLOR_EXPENSE = '#E91E63';
+const COLOR_INCOME = '#10B981';
 
-const ModalHeader = ({ onSave, loading }) => {
+const ModalHeader = ({ onSave, loading, title, onDelete, isEditMode }) => {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   return (
@@ -49,25 +50,33 @@ const ModalHeader = ({ onSave, loading }) => {
         disabled={loading}>
         <ArrowLeft size={FONT_SIZES.xl} color={COLORS.text_dark} />
       </TouchableOpacity>
-      <Text style={styles.headerTitle}>New Transaction</Text>
-      <TouchableOpacity
-        style={styles.headerButton}
-        onPress={onSave}
-        disabled={loading}>
-        {loading ? (
-          <ActivityIndicator size="small" color={COLORS.primary} />
-        ) : (
-          <Check size={FONT_SIZES.xl} color={COLORS.primary} />
+      <Text style={styles.headerTitle}>{title}</Text>
+      <View style={{ flexDirection: 'row' }}>
+        {isEditMode && (
+          <TouchableOpacity
+            style={[styles.headerButton, { marginRight: 8 }]}
+            onPress={onDelete}
+            disabled={loading}>
+            <Trash2 size={FONT_SIZES.xl} color={COLORS.text_danger} />
+          </TouchableOpacity>
         )}
-      </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.headerButton}
+          onPress={onSave}
+          disabled={loading}>
+          {loading ? (
+            <ActivityIndicator size="small" color={COLORS.primary} />
+          ) : (
+            <Check size={FONT_SIZES.xl} color={COLORS.primary} />
+          )}
+        </TouchableOpacity>
+      </View>
     </View>
   );
 };
 
-// Updated FormRow to handle background colors for icons
 const FormRow = ({ icon, emoji, text, onPress, value, iconColor, iconBackgroundColor }) => {
   const IconComponent = icon;
-  
   return (
     <TouchableOpacity style={styles.formRow} onPress={onPress}>
       <View style={[
@@ -94,8 +103,13 @@ const FormRow = ({ icon, emoji, text, onPress, value, iconColor, iconBackgroundC
 
 const NewTransactionScreen = () => {
   const navigation = useNavigation();
+  const route = useRoute();
   const { familyId } = useFamily();
   const { user } = useAuth();
+
+  // Get existing transaction from params if editing
+  const existingTx = route.params?.transaction;
+  const isEditMode = !!existingTx;
 
   const [type, setType] = useState('Expense');
   const [amount, setAmount] = useState('');
@@ -104,7 +118,6 @@ const NewTransactionScreen = () => {
   const [account, setAccount] = useState(null);
   const [paidBy, setPaidBy] = useState(null);
   const [date, setDate] = useState(new Date());
-  // Removed isPaid state
   const [repeat, setRepeat] = useState('One time only');
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
@@ -113,6 +126,40 @@ const NewTransactionScreen = () => {
   const [isAccountPickerVisible, setAccountPickerVisible] = useState(false);
   const [isMemberPickerVisible, setMemberPickerVisible] = useState(false);
   const [isDatePickerVisible, setDatePickerVisible] = useState(false);
+
+  // Populate state if editing
+  useEffect(() => {
+    if (isEditMode && existingTx) {
+      setType(existingTx.type);
+      setAmount(existingTx.amount.toString());
+      setTitle(existingTx.title);
+      // Reconstruct category object for UI
+      setCategory({ 
+        id: existingTx.category, 
+        name: existingTx.categoryName, 
+        icon: existingTx.categoryIcon 
+      });
+      // Reconstruct account object for UI
+      setAccount({ 
+        id: existingTx.accountId, 
+        name: existingTx.accountName, 
+        icon: existingTx.accountIcon 
+      });
+      // PaidBy is just an ID, we might need to fetch full object or just store ID
+      // For MVP we stored just ID in paidBy. 
+      // To properly show "Received by X", we need the user object. 
+      // Assuming we can't easily get the full object here without context, 
+      // we'll just rely on the list logic or default.
+      // Ideally, pass the full member object if available or fetch it.
+      // For now, we will keep paidBy as null to show "Paid by" until user re-selects,
+      // OR you can pass the full member object via navigation params if you have it.
+      
+      const txDate = existingTx.date.toDate ? existingTx.date.toDate() : new Date(existingTx.date);
+      setDate(txDate);
+      setRepeat(existingTx.repeat || 'One time only');
+      setNote(existingTx.note || '');
+    }
+  }, [isEditMode, existingTx]);
 
   const activeColor = type === 'Expense' ? COLOR_EXPENSE : COLOR_INCOME;
 
@@ -138,26 +185,65 @@ const NewTransactionScreen = () => {
       accountId: account ? account.id : 'cash',
       accountName: account ? account.name : 'Cash',
       accountIcon: account ? account.icon : '💵',
-      paidBy: paidBy ? paidBy.id : user.uid,
+      paidBy: paidBy ? paidBy.id : (existingTx?.paidBy || user.uid),
       date: firestore.Timestamp.fromDate(date),
-      isPaid: true, // Defaulting to true since field was removed
+      isPaid: true,
       repeat,
       note,
-      createdBy: user.uid,
+      updatedBy: user.uid,
     };
 
+    if (!isEditMode) {
+        transactionData.createdBy = user.uid;
+    }
+
     try {
-      await addTransaction(familyId, transactionData);
+      if (isEditMode) {
+        await updateTransaction(familyId, existingTx.id, existingTx, transactionData);
+      } else {
+        await addTransaction(familyId, transactionData);
+      }
       navigation.goBack();
     } catch (error) {
       Alert.alert('Error', 'Could not save transaction.');
+    } finally {
       setLoading(false);
     }
   };
 
+  const handleDelete = () => {
+    Alert.alert(
+      'Delete Transaction',
+      'Are you sure you want to delete this transaction?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setLoading(true);
+            try {
+              await deleteTransaction(familyId, existingTx.id, existingTx);
+              navigation.goBack();
+            } catch (error) {
+              Alert.alert('Error', 'Could not delete transaction.');
+              setLoading(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   return (
     <View style={styles.container}>
-      <ModalHeader onSave={handleSave} loading={loading} />
+      <ModalHeader 
+        title={isEditMode ? "Edit Transaction" : "New Transaction"}
+        onSave={handleSave} 
+        loading={loading} 
+        isEditMode={isEditMode}
+        onDelete={handleDelete}
+      />
       
       <ScrollView>
         <View style={styles.amountContainer}>
@@ -169,7 +255,7 @@ const NewTransactionScreen = () => {
             placeholder="0.00"
             placeholderTextColor={activeColor + '80'} 
             keyboardType="numeric"
-            autoFocus
+            autoFocus={!isEditMode}
           />
         </View>
         
@@ -216,8 +302,6 @@ const NewTransactionScreen = () => {
         </View>
         
         <View style={styles.card}>
-           {/* Removed the "Mark as paid" Switch Row */}
-           
            <FormRow
             icon={Repeat}
             text="Repeat"

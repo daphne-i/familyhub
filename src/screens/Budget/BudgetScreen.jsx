@@ -24,7 +24,8 @@ import {
 } from 'lucide-react-native';
 import * as theme from '../../utils/theme';
 import { useFamilyCollection, useBudget } from '../../services/firestore';
-import MemberAvatar from '../Common/MemberAvatar'; // Import MemberAvatar
+import { useFamily } from '../../hooks/useFamily'; // 1. Import useFamily
+import MemberAvatar from '../Common/MemberAvatar';
 
 const { COLORS, FONT_SIZES, SPACING, RADII } = theme;
 
@@ -47,7 +48,7 @@ const BudgetHeader = () => {
   );
 };
 
-const SummaryCard = ({ budgetData, loading }) => {
+const SummaryCard = ({ totalSpent, loading }) => {
   if (loading) {
     return (
       <View style={[styles.summaryCard, { height: 180, justifyContent: 'center' }]}>
@@ -56,8 +57,8 @@ const SummaryCard = ({ budgetData, loading }) => {
     );
   }
 
-  const spent = budgetData?.totalSpent || 0;
-  const budgetLimit = 20000; // TODO: Make editable
+  const spent = totalSpent || 0;
+  const budgetLimit = 20000; 
   const left = budgetLimit - spent;
   const percent = Math.min(Math.max((spent / budgetLimit) * 100, 0), 100);
 
@@ -132,42 +133,52 @@ const ViewToggle = ({ currentView, setView }) => {
 // --- Main Screen ---
 const BudgetScreen = () => {
   const navigation = useNavigation();
+  const { membersList } = useFamily(); // 2. Get members list
   const [currentView, setCurrentView] = useState('List');
   const [selectedDate, setSelectedDate] = useState(new Date());
   
-  // 1. Calculate Month ID (YYYY-MM)
   const monthId = useMemo(() => {
     const year = selectedDate.getFullYear();
     const month = (selectedDate.getMonth() + 1).toString().padStart(2, '0');
     return `${year}-${month}`;
   }, [selectedDate]);
 
-  // 2. Fetch Budget Summary
+  // Use the budget hook (optional if we rely purely on client-side calc, but good for future limits)
   const { data: budgetData, loading: loadingBudget } = useBudget(monthId);
-
-  // 3. Fetch Transactions
   const { data: allTransactions, loading: loadingTx } = useFamilyCollection('transactions');
 
   const filteredTransactions = useMemo(() => {
     if (!allTransactions) return [];
     return allTransactions.filter(tx => {
       if (!tx.date) return false;
-      const txDate = tx.date.toDate();
+      const txDate = tx.date.toDate ? tx.date.toDate() : new Date(tx.date);
       return (
         txDate.getMonth() === selectedDate.getMonth() &&
         txDate.getFullYear() === selectedDate.getFullYear()
       );
-    }).sort((a, b) => b.date.toDate() - a.date.toDate());
+    }).sort((a, b) => {
+        const dateA = a.date.toDate ? a.date.toDate() : new Date(a.date);
+        const dateB = b.date.toDate ? b.date.toDate() : new Date(b.date);
+        return dateB - dateA;
+    });
   }, [allTransactions, selectedDate]);
 
+  const calculatedSpent = useMemo(() => {
+      return filteredTransactions.reduce((total, tx) => {
+          if (tx.type === 'Expense') {
+              return total + (tx.amount || 0);
+          }
+          return total;
+      }, 0);
+  }, [filteredTransactions]);
 
   // --- Grouping Logic ---
   
-  // Group by Date for "List" view
   const groupedByDate = useMemo(() => {
     const groups = {};
     filteredTransactions.forEach(tx => {
-      const dateStr = tx.date.toDate().toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+      const txDate = tx.date.toDate ? tx.date.toDate() : new Date(tx.date);
+      const dateStr = txDate.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
       if (!groups[dateStr]) {
         groups[dateStr] = { day: dateStr, total: 0, items: [] };
       }
@@ -177,7 +188,6 @@ const BudgetScreen = () => {
     return Object.values(groups);
   }, [filteredTransactions]);
 
-  // Group by Category
   const groupedByCategory = useMemo(() => {
      const groups = {};
      let totalExpense = 0;
@@ -189,7 +199,6 @@ const BudgetScreen = () => {
              id: tx.category, 
              title: tx.categoryName || 'Uncategorized',
              amount: 0,
-             // FIX: Use the icon from the transaction
              icon: tx.categoryIcon || '🔣' 
            };
          }
@@ -202,7 +211,6 @@ const BudgetScreen = () => {
      })).sort((a, b) => b.amount - a.amount);
   }, [filteredTransactions]);
 
-  // Group by Member
   const groupedByMember = useMemo(() => {
     const groups = {};
     let totalExpense = 0;
@@ -222,14 +230,12 @@ const BudgetScreen = () => {
     })).sort((a, b) => b.amount - a.amount);
   }, [filteredTransactions]);
 
-  // Group by Account
   const groupedByAccount = useMemo(() => {
     const groups = {};
     filteredTransactions.forEach(tx => {
       if (tx.type === 'Expense') {
         const accName = tx.accountName || 'Cash';
         if (!groups[accName]) {
-          // FIX: Use the icon from the transaction
           groups[accName] = { name: accName, amount: 0, icon: tx.accountIcon || '💵' }; 
         }
         groups[accName].amount += tx.amount;
@@ -269,9 +275,12 @@ const BudgetScreen = () => {
             <Text style={styles.listDayTotal}>-₹{item.total.toFixed(2)}</Text>
           </View>
           {item.items.map(tx => (
-            <View key={tx.id} style={styles.txRow}>
+            <TouchableOpacity 
+              key={tx.id} 
+              style={styles.txRow}
+              onPress={() => navigation.navigate('NewTransaction', { transaction: tx })}
+            >
               <View style={styles.txIconContainer}>
-                {/* FIX: Display the Category Icon here */}
                 <Text style={styles.txIcon}>{tx.categoryIcon || '💰'}</Text> 
               </View>
               <View style={styles.txRowCenter}>
@@ -281,7 +290,7 @@ const BudgetScreen = () => {
               <Text style={[styles.txAmount, tx.type === 'Expense' ? styles.txExpense : styles.txIncome]}>
                 {tx.type === 'Expense' ? '-' : '+'}₹{tx.amount.toFixed(2)}
               </Text>
-            </View>
+            </TouchableOpacity>
           ))}
         </View>
       )}
@@ -313,18 +322,24 @@ const BudgetScreen = () => {
      data={groupedByMember}
      keyExtractor={item => item.id}
      ListHeaderComponent={<Text style={styles.listHeaderTitle}>Expenses by Member</Text>}
-     renderItem={({ item }) => (
-       <View style={styles.txRow}>
-         <View style={{ marginRight: 12 }}> 
-            <MemberAvatar memberId={item.id} />
+     renderItem={({ item }) => {
+       // 3. Look up Member Name
+       const member = membersList.find(m => m.id === item.id);
+       const memberName = member ? member.displayName : 'Unknown';
+
+       return (
+         <View style={styles.txRow}>
+           <View style={{ marginRight: 12 }}> 
+              <MemberAvatar memberId={item.id} />
+           </View>
+           <View style={styles.txRowCenter}>
+             <Text style={styles.txTitle}>{memberName}</Text> 
+             <Text style={styles.txSubtitle}>{item.percent} of expenses</Text>
+           </View>
+           <Text style={[styles.txAmount, styles.txExpense]}>₹{item.amount.toFixed(2)}</Text>
          </View>
-         <View style={styles.txRowCenter}>
-           <Text style={styles.txTitle}>Member</Text> 
-           <Text style={styles.txSubtitle}>{item.percent} of expenses</Text>
-         </View>
-         <Text style={[styles.txAmount, styles.txExpense]}>₹{item.amount.toFixed(2)}</Text>
-       </View>
-     )}
+       );
+     }}
    />
  );
 
@@ -359,7 +374,7 @@ const BudgetScreen = () => {
   return (
     <View style={styles.container}>
       <BudgetHeader />
-      <SummaryCard budgetData={budgetData} loading={loadingBudget} />
+      <SummaryCard totalSpent={calculatedSpent} loading={loadingTx} />
       <MonthSelector currentMonth={selectedDate} onPrev={handlePrevMonth} onNext={handleNextMonth} />
       <ViewToggle currentView={currentView} setView={setCurrentView} />
       
@@ -530,7 +545,7 @@ const styles = StyleSheet.create({
     marginRight: SPACING.md,
   },
   txIcon: {
-    fontSize: 22, // Increased font size for emojis
+    fontSize: 22,
     color: COLORS.text_dark,
   },
   txRowCenter: {

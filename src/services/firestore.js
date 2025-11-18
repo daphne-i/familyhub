@@ -365,18 +365,18 @@ export const deleteCalendarEvent = async (familyId, eventId) => {
  * @param {string} familyId The family ID.
  * @param {object} transactionData The transaction data.
  */
+// --- BUDGET FUNCTIONS ---
+
+/**
+ * Adds a new transaction AND updates the monthly budget summary atomically.
+ */
 export const addTransaction = async (familyId, transactionData) => {
-  if (!familyId || !transactionData) {
-    throw new Error('Missing data for addTransaction');
-  }
+  if (!familyId || !transactionData) throw new Error('Missing data');
 
   const { date, amount, type } = transactionData;
-  
-  // 1. Determine the Month ID (YYYY-MM)
-  // We need to convert the Firestore Timestamp to a JS Date if it isn't already
   const dateObj = date.toDate ? date.toDate() : date; 
   const year = dateObj.getFullYear();
-  const month = (dateObj.getMonth() + 1).toString().padStart(2, '0'); // "01", "11"
+  const month = (dateObj.getMonth() + 1).toString().padStart(2, '0');
   const budgetId = `${year}-${month}`;
 
   const budgetRef = firestore().doc(`families/${familyId}/budget/${budgetId}`);
@@ -384,31 +384,18 @@ export const addTransaction = async (familyId, transactionData) => {
 
   try {
     await firestore().runTransaction(async (t) => {
-      // 2. Read the current budget doc
       const budgetDoc = await t.get(budgetRef);
-      let currentSpent = 0;
-      let currentIncome = 0;
+      let currentSpent = budgetDoc.exists ? (budgetDoc.data().totalSpent || 0) : 0;
+      let currentIncome = budgetDoc.exists ? (budgetDoc.data().totalIncome || 0) : 0;
 
-      if (budgetDoc.exists) {
-        currentSpent = budgetDoc.data().totalSpent || 0;
-        currentIncome = budgetDoc.data().totalIncome || 0;
-      }
+      if (type === 'Expense') currentSpent += amount;
+      else currentIncome += amount;
 
-      // 3. Calculate new totals
-      if (type === 'Expense') {
-        currentSpent += amount;
-      } else {
-        currentIncome += amount;
-      }
-
-      // 4. Write the Transaction
       t.set(transactionRef, { 
         ...transactionData,
-        date: date, // Ensure this is a Firestore Timestamp or Date
         createdAt: firestore.FieldValue.serverTimestamp(),
       });
 
-      // 5. Update the Budget Summary
       t.set(budgetRef, {
         totalSpent: currentSpent,
         totalIncome: currentIncome,
@@ -417,10 +404,75 @@ export const addTransaction = async (familyId, transactionData) => {
         updatedAt: firestore.FieldValue.serverTimestamp()
       }, { merge: true });
     });
-    console.log("Transaction added and budget updated successfully!");
   } catch (error) {
-    console.error('Error adding transaction: ', error);
-    throw new Error('Failed to add transaction. Please try again.');
+    console.error('Error adding transaction:', error);
+    throw error;
+  }
+};
+
+/**
+ * Updates a transaction and adjusts the budget totals accordingly.
+ * Handles cases where amount, type, or date (month) changes.
+ */
+export const updateTransaction = async (familyId, transactionId, oldTxData, newTxData) => {
+  if (!familyId || !transactionId || !oldTxData || !newTxData) return;
+
+  const oldDate = oldTxData.date.toDate ? oldTxData.date.toDate() : new Date(oldTxData.date);
+  const newDate = newTxData.date.toDate ? newTxData.date.toDate() : newTxData.date;
+  
+  const oldBudgetId = `${oldDate.getFullYear()}-${(oldDate.getMonth() + 1).toString().padStart(2, '0')}`;
+  const newBudgetId = `${newDate.getFullYear()}-${(newDate.getMonth() + 1).toString().padStart(2, '0')}`;
+
+  const oldBudgetRef = firestore().doc(`families/${familyId}/budget/${oldBudgetId}`);
+  const newBudgetRef = firestore().doc(`families/${familyId}/budget/${newBudgetId}`);
+  const transactionRef = firestore().doc(`families/${familyId}/transactions/${transactionId}`);
+
+  try {
+    await firestore().runTransaction(async (t) => {
+      // 1. Revert old amount from old budget
+      const oldBudgetDoc = await t.get(oldBudgetRef);
+      let oldSpent = oldBudgetDoc.exists ? (oldBudgetDoc.data().totalSpent || 0) : 0;
+      let oldIncome = oldBudgetDoc.exists ? (oldBudgetDoc.data().totalIncome || 0) : 0;
+
+      if (oldTxData.type === 'Expense') oldSpent -= oldTxData.amount;
+      else oldIncome -= oldTxData.amount;
+
+      // 2. Add new amount to new budget
+      // If the month is the same, we use the calculated values from step 1 as the base
+      let newSpent = (oldBudgetId === newBudgetId) ? oldSpent : 0;
+      let newIncome = (oldBudgetId === newBudgetId) ? oldIncome : 0;
+
+      if (oldBudgetId !== newBudgetId) {
+        // If months are different, we need to fetch the new budget doc
+        const newBudgetDoc = await t.get(newBudgetRef);
+        newSpent = newBudgetDoc.exists ? (newBudgetDoc.data().totalSpent || 0) : 0;
+        newIncome = newBudgetDoc.exists ? (newBudgetDoc.data().totalIncome || 0) : 0;
+        
+        // Write the update to the OLD budget (since we moved the transaction out of it)
+        t.set(oldBudgetRef, { totalSpent: oldSpent, totalIncome: oldIncome }, { merge: true });
+      }
+
+      if (newTxData.type === 'Expense') newSpent += newTxData.amount;
+      else newIncome += newTxData.amount;
+
+      // Write the update to the NEW budget
+      t.set(newBudgetRef, {
+        totalSpent: newSpent,
+        totalIncome: newIncome,
+        month: newDate.getMonth() + 1,
+        year: newDate.getFullYear(),
+        updatedAt: firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+
+      // 3. Update the Transaction Document
+      t.update(transactionRef, {
+        ...newTxData,
+        updatedAt: firestore.FieldValue.serverTimestamp(),
+      });
+    });
+  } catch (error) {
+    console.error('Error updating transaction:', error);
+    throw error;
   }
 };
 
@@ -432,9 +484,7 @@ export const deleteTransaction = async (familyId, transactionId, transactionData
 
   const { date, amount, type } = transactionData;
   const dateObj = date.toDate ? date.toDate() : new Date(date);
-  const year = dateObj.getFullYear();
-  const month = (dateObj.getMonth() + 1).toString().padStart(2, '0');
-  const budgetId = `${year}-${month}`;
+  const budgetId = `${dateObj.getFullYear()}-${(dateObj.getMonth() + 1).toString().padStart(2, '0')}`;
 
   const budgetRef = firestore().doc(`families/${familyId}/budget/${budgetId}`);
   const transactionRef = firestore().doc(`families/${familyId}/transactions/${transactionId}`);
@@ -442,31 +492,26 @@ export const deleteTransaction = async (familyId, transactionId, transactionData
   try {
     await firestore().runTransaction(async (t) => {
       const budgetDoc = await t.get(budgetRef);
-      if (!budgetDoc.exists) {
-         // If budget doc is missing, just delete the transaction
-         t.delete(transactionRef);
-         return;
-      }
+      
+      // Only update budget if it exists
+      if (budgetDoc.exists) {
+        let currentSpent = budgetDoc.data().totalSpent || 0;
+        let currentIncome = budgetDoc.data().totalIncome || 0;
 
-      let currentSpent = budgetDoc.data().totalSpent || 0;
-      let currentIncome = budgetDoc.data().totalIncome || 0;
+        if (type === 'Expense') currentSpent -= amount;
+        else currentIncome -= amount;
 
-      // Revert totals
-      if (type === 'Expense') {
-        currentSpent -= amount;
-      } else {
-        currentIncome -= amount;
+        t.update(budgetRef, {
+          totalSpent: currentSpent,
+          totalIncome: currentIncome,
+          updatedAt: firestore.FieldValue.serverTimestamp()
+        });
       }
 
       t.delete(transactionRef);
-      t.update(budgetRef, {
-        totalSpent: currentSpent,
-        totalIncome: currentIncome,
-        updatedAt: firestore.FieldValue.serverTimestamp()
-      });
     });
   } catch (error) {
-    console.error('Error deleting transaction: ', error);
-    throw new Error('Failed to delete transaction.');
+    console.error('Error deleting transaction:', error);
+    throw error;
   }
 };
