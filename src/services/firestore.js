@@ -175,6 +175,10 @@ export const useFamilyDocument = (docPath) => {
   return { data, loading, error };
 };
 
+export const useBudget = (monthId) => {
+  return useFamilyDocument(`budget/${monthId}`);
+};
+
 /**
  * Adds a new document to a top-level family collection (e.g., 'lists')
  * @param {string} familyId The family ID.
@@ -353,5 +357,29 @@ export const deleteCalendarEvent = async (familyId, eventId) => {
   } catch (error) {
     console.error('Error deleting calendar event: ', error);
     throw new Error('Failed to delete event. Please try again.');
+  }
+};
+
+// --- NEW BUDGET FUNCTION ---
+
+/**
+ * Adds a new transaction to the budget.
+ * @param {string} familyId The family ID.
+ * @param {object} transactionData The transaction data.
+ */
+export const addTransaction = async (familyId, transactionData) => {
+  if (!familyId || !transactionData) {
+    throw new Error('Missing data for addTransaction');
+  }
+
+  try {
+    // We use 'transactions' collection. The cloud function will update the budget summary.
+    await addFamilyDoc(familyId, 'transactions', {
+      ...transactionData,
+      createdAt: firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (error) {
+    console.error('Error adding transaction: ', error);
+    throw new Error('Failed to add transaction. Please try again.');
   }
 };
