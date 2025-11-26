@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,9 @@ import {
   ScrollView,
   FlatList,
   ActivityIndicator,
+  Modal,
+  TextInput,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -16,22 +19,24 @@ import {
   Plus,
   ChevronLeft,
   ChevronRight,
-  ChevronDown, 
   List,        
   Tag,
   User,
   Banknote,
+  X,
+  ChevronDown // Import ChevronDown for the toggle hint
 } from 'lucide-react-native';
 import * as theme from '../../utils/theme';
-import { useFamilyCollection, useBudget } from '../../services/firestore';
-import { useFamily } from '../../hooks/useFamily'; // 1. Import useFamily
+import { useFamilyCollection, useBudget, updateBudgetLimit } from '../../services/firestore';
+import { useFamily } from '../../hooks/useFamily';
 import MemberAvatar from '../Common/MemberAvatar';
+import MonthYearPicker from '../Common/MonthYearPicker';
 
 const { COLORS, FONT_SIZES, SPACING, RADII } = theme;
 
 // --- Components ---
 
-const BudgetHeader = () => {
+const BudgetHeader = ({ onPressMore }) => {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   return (
@@ -41,14 +46,15 @@ const BudgetHeader = () => {
         onPress={() => navigation.navigate('Hub')}>
         <Home size={FONT_SIZES.xl} color={COLORS.text_dark} /> 
       </TouchableOpacity>
-      <TouchableOpacity style={styles.headerButton}>
+      <TouchableOpacity style={styles.headerButton} onPress={onPressMore}>
         <MoreHorizontal size={FONT_SIZES.xl} color={COLORS.text_dark} />
       </TouchableOpacity>
     </View>
   );
 };
 
-const SummaryCard = ({ totalSpent, loading }) => {
+// Updated SummaryCard to toggle between Expense and Income
+const SummaryCard = ({ totalSpent, totalIncome, budgetLimit, loading, mode, onToggle }) => {
   if (loading) {
     return (
       <View style={[styles.summaryCard, { height: 180, justifyContent: 'center' }]}>
@@ -57,39 +63,115 @@ const SummaryCard = ({ totalSpent, loading }) => {
     );
   }
 
-  const spent = totalSpent || 0;
-  const budgetLimit = 20000; 
-  const left = budgetLimit - spent;
-  const percent = Math.min(Math.max((spent / budgetLimit) * 100, 0), 100);
+  const isExpense = mode === 'expense';
+  
+  // Values to display
+  const amount = isExpense ? totalSpent : totalIncome;
+  const label = isExpense ? 'Monthly Expenses' : 'Monthly Income';
+  const subLabel = isExpense ? 'Expenses this month' : 'Income this month';
+  
+  // Budget logic (only relevant for expenses)
+  const limit = budgetLimit || 20000; 
+  const left = limit - totalSpent;
+  const percent = Math.min(Math.max((totalSpent / limit) * 100, 0), 100);
+
+  // Dynamic background color: Blue for Expense (Default), Green for Income
+  const cardBackgroundColor = isExpense ? COLORS.primary : COLORS.green;
 
   return (
-    <View style={styles.summaryCard}>
-      <TouchableOpacity style={styles.summaryTitleRow}>
-        <Text style={styles.summaryLabel}>Monthly Budget</Text>
+    <TouchableOpacity 
+      style={[styles.summaryCard, { backgroundColor: cardBackgroundColor }]} 
+      activeOpacity={0.9}
+      onPress={onToggle}
+    >
+      <View style={styles.summaryTitleRow}>
+        <Text style={styles.summaryLabel}>{label}</Text>
         <ChevronDown size={16} color="rgba(255,255,255,0.7)" style={{ marginLeft: SPACING.xs }} />
-      </TouchableOpacity>
-      <Text style={styles.summaryBalance}>₹{spent.toFixed(2)}</Text>
-      <Text style={styles.summarySublabel}>Expenses this month</Text>
+      </View>
       
-      <View style={styles.progressContainer}>
-        <Text style={styles.progressText}>Budget: ₹{left.toFixed(2)} left</Text>
-        <Text style={styles.progressText}>{percent.toFixed(0)}%</Text>
-      </View>
-      <View style={styles.progressBar}>
-        <View style={[styles.progressFill, { width: `${percent}%` }]} />
-      </View>
-    </View>
+      <Text style={styles.summaryBalance}>₹{amount.toFixed(2)}</Text>
+      <Text style={styles.summarySublabel}>{subLabel}</Text>
+      
+      {/* Only show Progress Bar for Expenses */}
+      {isExpense ? (
+        <>
+          <View style={styles.progressContainer}>
+            <Text style={styles.progressText}>Budget: ₹{left.toFixed(2)} left</Text>
+            <Text style={styles.progressText}>{percent.toFixed(0)}%</Text>
+          </View>
+          <View style={styles.progressBar}>
+            <View style={[styles.progressFill, { width: `${percent}%` }]} />
+          </View>
+        </>
+      ) : (
+        // Placeholder or specific Income info could go here
+        <View style={{ marginTop: SPACING.xl, height: 20 }} />
+      )}
+    </TouchableOpacity>
   );
 };
 
-const MonthSelector = ({ currentMonth, onPrev, onNext }) => {
+// ... [EditBudgetModal, MonthSelector, ViewToggle remain UNCHANGED] ...
+const EditBudgetModal = ({ visible, onClose, onSave, currentLimit, monthLabel }) => {
+  const [limit, setLimit] = useState('');
+
+  useEffect(() => {
+    if (visible) {
+      setLimit(currentLimit ? currentLimit.toString() : '20000');
+    }
+  }, [visible, currentLimit]);
+
+  const handleSave = () => {
+    const val = parseFloat(limit);
+    if (!isNaN(val) && val > 0) {
+      onSave(val);
+      onClose();
+    } else {
+      Alert.alert("Invalid Amount", "Please enter a valid positive number.");
+    }
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Set Budget Limit</Text>
+            <TouchableOpacity onPress={onClose}>
+              <X size={24} color={COLORS.text_dark} />
+            </TouchableOpacity>
+          </View>
+           <Text style={styles.modalSubtitle}>For {monthLabel}</Text>
+           <TextInput
+             style={styles.input}
+             value={limit}
+             onChangeText={setLimit}
+             keyboardType="numeric"
+             placeholder="e.g. 20000"
+             placeholderTextColor={COLORS.text_light}
+             autoFocus
+           />
+           <TouchableOpacity onPress={handleSave} style={styles.saveButton}>
+             <Text style={styles.saveButtonText}>Save Limit</Text>
+           </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
+const MonthSelector = ({ currentMonth, onPrev, onNext, onPressDate }) => {
   const monthName = currentMonth.toLocaleString('default', { month: 'long', year: 'numeric' });
   return (
     <View style={styles.monthSelector}>
       <TouchableOpacity onPress={onPrev}>
         <ChevronLeft size={24} color={COLORS.text_dark} />
       </TouchableOpacity>
-      <Text style={styles.monthText}>{monthName}</Text>
+      
+      <TouchableOpacity onPress={onPressDate} style={styles.monthClickable}>
+        <Text style={styles.monthText}>{monthName}</Text>
+      </TouchableOpacity>
+
       <TouchableOpacity onPress={onNext}>
         <ChevronRight size={24} color={COLORS.text_dark} />
       </TouchableOpacity>
@@ -106,44 +188,54 @@ const ViewToggle = ({ currentView, setView }) => {
   ];
 
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.viewToggle}>
-      {toggleOptions.map((opt) => {
-        const isActive = currentView === opt.key;
-        const Icon = opt.icon;
-        return (
-          <TouchableOpacity
-            key={opt.key}
-            style={[styles.toggleButton, isActive && styles.toggleActive]}
-            onPress={() => setView(opt.key)}>
-            <Icon 
-              size={18} 
-              color={isActive ? COLORS.primary : COLORS.text} 
-              style={styles.toggleIcon} 
-            />
-            <Text style={[styles.toggleText, isActive && styles.toggleActiveText]}>
-              {opt.key}
-            </Text>
-          </TouchableOpacity>
-        );
-      })}
-    </ScrollView>
+    <View style={styles.viewToggleContainer}>
+      <ScrollView 
+        horizontal 
+        showsHorizontalScrollIndicator={false} 
+        contentContainerStyle={styles.viewToggleContent}
+      >
+        {toggleOptions.map((opt) => {
+          const isActive = currentView === opt.key;
+          const Icon = opt.icon;
+          return (
+            <TouchableOpacity
+              key={opt.key}
+              style={[styles.toggleButton, isActive && styles.toggleActive]}
+              onPress={() => setView(opt.key)}>
+              <Icon 
+                size={18} 
+                color={isActive ? COLORS.primary : COLORS.text} 
+                style={styles.toggleIcon} 
+              />
+              <Text style={[styles.toggleText, isActive && styles.toggleActiveText]}>
+                {opt.key}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+    </View>
   );
 };
 
 // --- Main Screen ---
 const BudgetScreen = () => {
   const navigation = useNavigation();
-  const { membersList } = useFamily(); // 2. Get members list
+  const { familyId, membersList } = useFamily();
   const [currentView, setCurrentView] = useState('List');
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const [isEditModalVisible, setEditModalVisible] = useState(false);
+  const [isMonthPickerVisible, setMonthPickerVisible] = useState(false);
   
+  // 1. New State for Summary Mode ('expense' or 'income')
+  const [summaryMode, setSummaryMode] = useState('expense');
+
   const monthId = useMemo(() => {
     const year = selectedDate.getFullYear();
     const month = (selectedDate.getMonth() + 1).toString().padStart(2, '0');
     return `${year}-${month}`;
   }, [selectedDate]);
 
-  // Use the budget hook (optional if we rely purely on client-side calc, but good for future limits)
   const { data: budgetData, loading: loadingBudget } = useBudget(monthId);
   const { data: allTransactions, loading: loadingTx } = useFamilyCollection('transactions');
 
@@ -163,9 +255,20 @@ const BudgetScreen = () => {
     });
   }, [allTransactions, selectedDate]);
 
+  // Calculate Total Spent
   const calculatedSpent = useMemo(() => {
       return filteredTransactions.reduce((total, tx) => {
           if (tx.type === 'Expense') {
+              return total + (tx.amount || 0);
+          }
+          return total;
+      }, 0);
+  }, [filteredTransactions]);
+
+  // 2. Calculate Total Income
+  const calculatedIncome = useMemo(() => {
+      return filteredTransactions.reduce((total, tx) => {
+          if (tx.type === 'Income') {
               return total + (tx.amount || 0);
           }
           return total;
@@ -183,17 +286,24 @@ const BudgetScreen = () => {
         groups[dateStr] = { day: dateStr, total: 0, items: [] };
       }
       groups[dateStr].items.push(tx);
-      if (tx.type === 'Expense') groups[dateStr].total += tx.amount;
+      // Only subtract expenses from daily total logic for visual clarity
+      if (tx.type === 'Expense') groups[dateStr].total -= tx.amount;
+      else groups[dateStr].total += tx.amount; // Add income
     });
     return Object.values(groups);
   }, [filteredTransactions]);
 
   const groupedByCategory = useMemo(() => {
      const groups = {};
-     let totalExpense = 0;
-     filteredTransactions.forEach(tx => {
-       if (tx.type === 'Expense') {
-         totalExpense += tx.amount;
+     let totalForView = 0;
+     
+     // Filter based on the current Summary Mode (Expense vs Income)
+     const relevantTransactions = filteredTransactions.filter(tx => 
+       summaryMode === 'expense' ? tx.type === 'Expense' : tx.type === 'Income'
+     );
+
+     relevantTransactions.forEach(tx => {
+         totalForView += tx.amount;
          if (!groups[tx.category]) {
            groups[tx.category] = { 
              id: tx.category, 
@@ -203,46 +313,53 @@ const BudgetScreen = () => {
            };
          }
          groups[tx.category].amount += tx.amount;
-       }
      });
+     
      return Object.values(groups).map(g => ({
        ...g,
-       percent: totalExpense > 0 ? `${((g.amount / totalExpense) * 100).toFixed(0)}%` : '0%'
+       percent: totalForView > 0 ? `${((g.amount / totalForView) * 100).toFixed(0)}%` : '0%'
      })).sort((a, b) => b.amount - a.amount);
-  }, [filteredTransactions]);
+  }, [filteredTransactions, summaryMode]); // Re-calculate when mode changes
 
   const groupedByMember = useMemo(() => {
     const groups = {};
-    let totalExpense = 0;
-    filteredTransactions.forEach(tx => {
-      if (tx.type === 'Expense') {
-        totalExpense += tx.amount;
+    let totalForView = 0;
+    
+    const relevantTransactions = filteredTransactions.filter(tx => 
+       summaryMode === 'expense' ? tx.type === 'Expense' : tx.type === 'Income'
+    );
+
+    relevantTransactions.forEach(tx => {
+        totalForView += tx.amount;
         const memberId = tx.paidBy || 'unknown';
         if (!groups[memberId]) {
           groups[memberId] = { id: memberId, amount: 0 };
         }
         groups[memberId].amount += tx.amount;
-      }
     });
+
     return Object.values(groups).map(g => ({
       ...g,
-      percent: totalExpense > 0 ? `${((g.amount / totalExpense) * 100).toFixed(0)}%` : '0%'
+      percent: totalForView > 0 ? `${((g.amount / totalForView) * 100).toFixed(0)}%` : '0%'
     })).sort((a, b) => b.amount - a.amount);
-  }, [filteredTransactions]);
+  }, [filteredTransactions, summaryMode]);
 
   const groupedByAccount = useMemo(() => {
     const groups = {};
-    filteredTransactions.forEach(tx => {
-      if (tx.type === 'Expense') {
+    // Account view usually shows everything, but let's respect the mode for consistency
+    const relevantTransactions = filteredTransactions.filter(tx => 
+       summaryMode === 'expense' ? tx.type === 'Expense' : tx.type === 'Income'
+    );
+
+    relevantTransactions.forEach(tx => {
         const accName = tx.accountName || 'Cash';
         if (!groups[accName]) {
           groups[accName] = { name: accName, amount: 0, icon: tx.accountIcon || '💵' }; 
         }
         groups[accName].amount += tx.amount;
-      }
     });
     return Object.values(groups).sort((a, b) => b.amount - a.amount);
-  }, [filteredTransactions]);
+  }, [filteredTransactions, summaryMode]);
 
 
   const handlePrevMonth = () => {
@@ -261,6 +378,18 @@ const BudgetScreen = () => {
     });
   };
 
+  const handleSaveLimit = async (newLimit) => {
+    try {
+        await updateBudgetLimit(familyId, monthId, newLimit);
+    } catch (e) {
+        Alert.alert("Error", "Failed to update budget limit");
+    }
+  };
+
+  const toggleSummaryMode = () => {
+      setSummaryMode(prev => prev === 'expense' ? 'income' : 'expense');
+  };
+
   // --- RENDER FUNCTIONS ---
 
   const renderList = () => (
@@ -272,7 +401,12 @@ const BudgetScreen = () => {
         <View>
           <View style={styles.listDayHeader}>
             <Text style={styles.listDayText}>{item.day}</Text>
-            <Text style={styles.listDayTotal}>-₹{item.total.toFixed(2)}</Text>
+            <Text style={[
+                styles.listDayTotal, 
+                item.total < 0 ? styles.txExpense : styles.txIncome
+            ]}>
+              {item.total < 0 ? '-' : '+'}₹{Math.abs(item.total).toFixed(2)}
+            </Text>
           </View>
           {item.items.map(tx => (
             <TouchableOpacity 
@@ -301,7 +435,12 @@ const BudgetScreen = () => {
     <FlatList
       data={groupedByCategory}
       keyExtractor={item => item.id}
-      ListHeaderComponent={<Text style={styles.listHeaderTitle}>Expenses by Category</Text>}
+      ListHeaderComponent={
+          <Text style={styles.listHeaderTitle}>
+              {summaryMode === 'expense' ? 'Expenses' : 'Income'} by Category
+          </Text>
+      }
+      ListEmptyComponent={<Text style={styles.emptyText}>No data for this view.</Text>}
       renderItem={({ item }) => (
         <View style={styles.txRow}>
           <View style={styles.txIconContainer}>
@@ -309,9 +448,11 @@ const BudgetScreen = () => {
           </View>
           <View style={styles.txRowCenter}>
             <Text style={styles.txTitle}>{item.title}</Text>
-            <Text style={styles.txSubtitle}>{item.percent} of expenses</Text>
+            <Text style={styles.txSubtitle}>{item.percent} of {summaryMode}</Text>
           </View>
-          <Text style={[styles.txAmount, styles.txExpense]}>₹{item.amount.toFixed(2)}</Text>
+          <Text style={[styles.txAmount, summaryMode === 'expense' ? styles.txExpense : styles.txIncome]}>
+              ₹{item.amount.toFixed(2)}
+          </Text>
         </View>
       )}
     />
@@ -321,12 +462,15 @@ const BudgetScreen = () => {
     <FlatList
      data={groupedByMember}
      keyExtractor={item => item.id}
-     ListHeaderComponent={<Text style={styles.listHeaderTitle}>Expenses by Member</Text>}
+     ListHeaderComponent={
+        <Text style={styles.listHeaderTitle}>
+            {summaryMode === 'expense' ? 'Expenses' : 'Income'} by Member
+        </Text>
+     }
+     ListEmptyComponent={<Text style={styles.emptyText}>No data for this view.</Text>}
      renderItem={({ item }) => {
-       // 3. Look up Member Name
        const member = membersList.find(m => m.id === item.id);
        const memberName = member ? member.displayName : 'Unknown';
-
        return (
          <View style={styles.txRow}>
            <View style={{ marginRight: 12 }}> 
@@ -334,9 +478,11 @@ const BudgetScreen = () => {
            </View>
            <View style={styles.txRowCenter}>
              <Text style={styles.txTitle}>{memberName}</Text> 
-             <Text style={styles.txSubtitle}>{item.percent} of expenses</Text>
+             <Text style={styles.txSubtitle}>{item.percent} of {summaryMode}</Text>
            </View>
-           <Text style={[styles.txAmount, styles.txExpense]}>₹{item.amount.toFixed(2)}</Text>
+           <Text style={[styles.txAmount, summaryMode === 'expense' ? styles.txExpense : styles.txIncome]}>
+               ₹{item.amount.toFixed(2)}
+           </Text>
          </View>
        );
      }}
@@ -347,7 +493,12 @@ const BudgetScreen = () => {
    <FlatList
      data={groupedByAccount}
      keyExtractor={item => item.name}
-     ListHeaderComponent={<Text style={styles.listHeaderTitle}>Expenses by Account</Text>}
+     ListHeaderComponent={
+        <Text style={styles.listHeaderTitle}>
+            {summaryMode === 'expense' ? 'Expenses' : 'Income'} by Account
+        </Text>
+     }
+     ListEmptyComponent={<Text style={styles.emptyText}>No data for this view.</Text>}
      renderItem={({ item }) => (
        <View style={styles.txRow}>
           <View style={styles.txIconContainer}>
@@ -356,7 +507,9 @@ const BudgetScreen = () => {
          <View style={styles.txRowCenter}>
            <Text style={styles.txTitle}>{item.name}</Text>
          </View>
-         <Text style={[styles.txAmount, styles.txExpense]}>₹{item.amount.toFixed(2)}</Text>
+         <Text style={[styles.txAmount, summaryMode === 'expense' ? styles.txExpense : styles.txIncome]}>
+             ₹{item.amount.toFixed(2)}
+         </Text>
        </View>
      )}
    />
@@ -373,9 +526,25 @@ const BudgetScreen = () => {
 
   return (
     <View style={styles.container}>
-      <BudgetHeader />
-      <SummaryCard totalSpent={calculatedSpent} loading={loadingTx} />
-      <MonthSelector currentMonth={selectedDate} onPrev={handlePrevMonth} onNext={handleNextMonth} />
+      <BudgetHeader onPressMore={() => setEditModalVisible(true)} />
+      
+      {/* 3. Pass new props to SummaryCard */}
+      <SummaryCard 
+        totalSpent={calculatedSpent} 
+        totalIncome={calculatedIncome}
+        budgetLimit={budgetData?.totalLimit} 
+        loading={loadingTx || loadingBudget}
+        mode={summaryMode}
+        onToggle={toggleSummaryMode}
+      />
+      
+      <MonthSelector 
+        currentMonth={selectedDate} 
+        onPrev={handlePrevMonth} 
+        onNext={handleNextMonth}
+        onPressDate={() => setMonthPickerVisible(true)} 
+      />
+      
       <ViewToggle currentView={currentView} setView={setCurrentView} />
       
       {renderContent()}
@@ -385,6 +554,24 @@ const BudgetScreen = () => {
         onPress={() => navigation.navigate('NewTransaction')}>
         <Plus size={30} color={COLORS.white} />
       </TouchableOpacity>
+
+      <EditBudgetModal
+        visible={isEditModalVisible}
+        onClose={() => setEditModalVisible(false)}
+        onSave={handleSaveLimit}
+        currentLimit={budgetData?.totalLimit}
+        monthLabel={selectedDate.toLocaleString('default', { month: 'long', year: 'numeric' })}
+      />
+
+      <MonthYearPicker
+        visible={isMonthPickerVisible}
+        onClose={() => setMonthPickerVisible(false)}
+        onSave={(date) => {
+          setSelectedDate(date);
+          setMonthPickerVisible(false);
+        }}
+        initialDate={selectedDate}
+      />
     </View>
   );
 };
@@ -408,26 +595,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   summaryCard: {
-    backgroundColor: COLORS.primary,
+    // backgroundColor is now dynamic
     padding: SPACING.lg,
   },
   summaryTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginBottom: SPACING.xs,
   },
   summaryLabel: {
     fontSize: FONT_SIZES.md,
-    color: 'rgba(255,255,255,0.7)',
+    color: 'rgba(255,255,255,0.8)',
   },
   summaryBalance: {
     fontSize: 40,
     fontWeight: 'bold',
     color: COLORS.white,
-    marginVertical: SPACING.xs,
+    marginBottom: SPACING.xs,
   },
   summarySublabel: {
     fontSize: FONT_SIZES.base,
-    color: 'rgba(255,255,255,0.7)',
+    color: 'rgba(255,255,255,0.8)',
   },
   progressContainer: {
     flexDirection: 'row',
@@ -459,17 +647,20 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
+  monthClickable: {
+    padding: SPACING.xs,
+  },
   monthText: {
     fontSize: FONT_SIZES.md,
     fontWeight: 'bold',
     color: COLORS.text_dark,
   },
-  viewToggle: {
-    flexDirection: 'row',
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.sm,
+  viewToggleContainer: {
     backgroundColor: COLORS.white,
-    maxHeight: 60, 
+    paddingVertical: SPACING.md,
+  },
+  viewToggleContent: {
+    paddingHorizontal: SPACING.lg,
   },
   toggleButton: {
     flexDirection: 'row',
@@ -545,7 +736,7 @@ const styles = StyleSheet.create({
     marginRight: SPACING.md,
   },
   txIcon: {
-    fontSize: 22,
+    fontSize: 22, 
     color: COLORS.text_dark,
   },
   txRowCenter: {
@@ -587,6 +778,53 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     elevation: 8,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    padding: SPACING.lg,
+  },
+  modalContainer: {
+    backgroundColor: COLORS.white,
+    borderRadius: RADII.lg,
+    padding: SPACING.xl,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: SPACING.md,
+  },
+  modalTitle: {
+    fontSize: FONT_SIZES.lg,
+    fontWeight: 'bold',
+    color: COLORS.text_dark,
+  },
+  modalSubtitle: {
+    fontSize: FONT_SIZES.md,
+    color: COLORS.text_light,
+    marginBottom: SPACING.lg,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: RADII.md,
+    padding: SPACING.md,
+    fontSize: FONT_SIZES.lg,
+    marginBottom: SPACING.xl,
+    textAlign: 'center',
+  },
+  saveButton: {
+    backgroundColor: COLORS.primary,
+    padding: SPACING.md,
+    borderRadius: RADII.md,
+    alignItems: 'center',
+  },
+  saveButtonText: {
+    color: COLORS.white,
+    fontWeight: 'bold',
+    fontSize: FONT_SIZES.md,
   },
 });
 

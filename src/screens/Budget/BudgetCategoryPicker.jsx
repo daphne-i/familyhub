@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Modal,
   View,
@@ -14,8 +14,12 @@ import {
   DEFAULT_EXPENSE_CATEGORIES,
   DEFAULT_INCOME_CATEGORIES,
 } from '../../constants';
+// 1. Re-import Firestore hooks
+import { useFamilyCollection, addBudgetCategory } from '../../services/firestore';
+import { useFamily } from '../../hooks/useFamily';
+import CreateBudgetEntityModal from './CreateBudgetEntityModal';
 
-const { COLORS, FONT_SIZES, SPACING } = theme;
+const { COLORS, FONT_SIZES, SPACING, RADII } = theme;
 
 const BudgetCategoryPicker = ({
   visible,
@@ -23,20 +27,43 @@ const BudgetCategoryPicker = ({
   onSelect,
   type, // 'Expense' or 'Income'
 }) => {
-  const categories =
-    type === 'Income'
-      ? DEFAULT_INCOME_CATEGORIES
-      : DEFAULT_EXPENSE_CATEGORIES;
+  const { familyId } = useFamily();
+  // 2. Fetch custom categories
+  const { data: customCategories } = useFamilyCollection('budgetCategories');
+  const [isCreateModalVisible, setCreateModalVisible] = useState(false);
 
-  // Add a "New" button with a special ID
-  const data = [...categories, { id: 'new', name: 'New', icon: 'plus' }];
+  // 3. Merge Defaults + Custom
+  const data = useMemo(() => {
+    const defaults = type === 'Income' ? DEFAULT_INCOME_CATEGORIES : DEFAULT_EXPENSE_CATEGORIES;
+    
+    // Filter custom categories by type (if you implemented type saving for custom ones)
+    const relevantCustom = customCategories ? customCategories.filter(c => !c.type || c.type === type) : [];
+
+    return [
+      ...defaults,
+      ...relevantCustom,
+      { id: 'new', name: 'New', icon: 'plus' } // Button at the end
+    ];
+  }, [type, customCategories]);
+
+  const handleCreate = async (newCategory) => {
+    try {
+      await addBudgetCategory(familyId, newCategory);
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   const renderItem = ({ item }) => (
     <TouchableOpacity
       style={styles.itemContainer}
       onPress={() => {
-        onSelect(item);
-        onClose();
+        if (item.id === 'new') {
+          setCreateModalVisible(true);
+        } else {
+          onSelect(item);
+          onClose();
+        }
       }}>
       <View
         style={[
@@ -73,6 +100,15 @@ const BudgetCategoryPicker = ({
           numColumns={4}
           contentContainerStyle={styles.listContent}
         />
+
+        {/* 4. Restore the Modal */}
+        <CreateBudgetEntityModal 
+            visible={isCreateModalVisible}
+            onClose={() => setCreateModalVisible(false)}
+            onSave={handleCreate}
+            title={`New ${type} Category`}
+            entityType={type}
+        />
       </SafeAreaView>
     </Modal>
   );
@@ -103,7 +139,7 @@ const styles = StyleSheet.create({
     padding: SPACING.md,
   },
   itemContainer: {
-    width: '25%', // 4 columns
+    width: '25%',
     alignItems: 'center',
     padding: SPACING.xs,
     marginBottom: SPACING.md,
@@ -121,8 +157,8 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.border,
   },
   emojiIcon: {
-    fontSize: 28, 
-    color: COLORS.text_dark, 
+    fontSize: 28,
+    color: COLORS.text_dark,
   },
   itemText: {
     fontSize: FONT_SIZES.sm,

@@ -211,30 +211,53 @@ const NewTransactionScreen = () => {
     }
   };
 
-  const handleDelete = () => {
-    Alert.alert(
-      'Delete Transaction',
-      'Are you sure you want to delete this transaction?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            setLoading(true);
-            try {
-              await deleteTransaction(familyId, existingTx.id, existingTx);
-              navigation.goBack();
-            } catch (error) {
-              Alert.alert('Error', 'Could not delete transaction.');
-              setLoading(false);
-            }
+const handleDelete = () => {
+    // Check if it's a repeating series
+    if (existingTx.seriesId) {
+      Alert.alert(
+        'Delete Repeating Transaction',
+        'This transaction is part of a repeating series.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete This Only',
+            onPress: () => performDelete('single'),
           },
-        },
-      ]
-    );
+          {
+            text: 'Delete All Future',
+            style: 'destructive',
+            onPress: () => performDelete('future'),
+          },
+        ]
+      );
+    } else {
+      // Standard delete for single item
+      Alert.alert(
+        'Delete Transaction',
+        'Are you sure you want to delete this transaction?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: () => performDelete('single'),
+          },
+        ]
+      );
+    }
   };
 
+  const performDelete = async (deleteScope) => {
+    setLoading(true);
+    try {
+      await deleteTransaction(familyId, existingTx.id, existingTx, deleteScope);
+      navigation.goBack();
+    } catch (error) {
+      Alert.alert('Error', 'Could not delete transaction.');
+      setLoading(false);
+    }
+  };
+  
   return (
     <View style={styles.container}>
       <ModalHeader 
