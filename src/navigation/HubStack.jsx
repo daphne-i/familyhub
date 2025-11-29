@@ -21,6 +21,7 @@ import NewEventScreen from '../screens/Calendar/NewEventScreen';
 import BudgetScreen from '../screens/Budget/BudgetScreen';
 import NewTransactionScreen from '../screens/Budget/NewTransactionScreen';
 import DocumentsScreen from '../screens/Documents/DocumentsScreen';
+import FolderDetailScreen from '../screens/Documents/FolderDetailScreen';
 import MealPlannerScreen from '../screens/MealPlanner/MealPlannerScreen';
 import RecipeBoxScreen from '../screens/RecipeBox/RecipeBoxScreen';
 
@@ -65,8 +66,11 @@ const HubStack = () => {
         component={NewTransactionScreen} 
         options={{ presentation: 'modal' }}
       />
-       {/* Other Features */}
+      {/* Documents Feature */}
       <Stack.Screen name="Documents" component={DocumentsScreen} />
+      {/* 2. Register the screen here */}
+      <Stack.Screen name="FolderDetail" component={FolderDetailScreen} />
+       {/* Other Features */}
       <Stack.Screen name="MealPlanner" component={MealPlannerScreen} />
       <Stack.Screen name="RecipeBox" component={RecipeBoxScreen} />
     </Stack.Navigator>

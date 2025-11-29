@@ -691,8 +691,97 @@ export const addFolder = async (familyId, folderName) => {
     throw error;
   }
 };
+/**
+ * Hook to fetch documents inside a specific folder.
+ */
+export const useFolderDocuments = (folderId) => {
+  const { user } = useAuth();
+  const { familyId } = useFamily();
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (!user || !familyId || !folderId) {
+      setLoading(false);
+      return;
+    }
+
+    const unsubscribe = firestore()
+      .collection(`families/${familyId}/documents`)
+      .where('folderId', '==', folderId)
+      .orderBy('uploadedAt', 'desc')
+      .onSnapshot(
+        (querySnapshot) => {
+          const docs = [];
+          querySnapshot.forEach((doc) => docs.push({ id: doc.id, ...doc.data() }));
+          setData(docs);
+          setLoading(false);
+        },
+        (err) => {
+          console.error('Error fetching documents:', err);
+          setError(err);
+          setLoading(false);
+        }
+      );
+    return () => unsubscribe();
+  }, [user, familyId, folderId]);
+
+  return { data, loading, error };
+};
 
 /**
+ * Adds a document metadata entry and increments the folder's file count.
+ * Note: The actual file upload to Storage happens in the UI before calling this.
+ */
+export const addDocument = async (familyId, folderId, docData) => {
+  if (!familyId || !folderId || !docData) throw new Error('Missing data');
+
+  const docRef = firestore().collection(`families/${familyId}/documents`).doc();
+  const folderRef = firestore().doc(`families/${familyId}/docFolders/${folderId}`);
+
+  try {
+    await firestore().runTransaction(async (t) => {
+      // 1. Create the document
+      t.set(docRef, {
+        ...docData,
+        folderId,
+        createdAt: firestore.FieldValue.serverTimestamp(),
+        uploadedAt: firestore.FieldValue.serverTimestamp(),
+      });
+
+      // 2. Increment file count on the folder
+      t.update(folderRef, {
+        fileCount: firestore.FieldValue.increment(1),
+      });
+    });
+  } catch (error) {
+    console.error('Error adding document:', error);
+    throw error;
+  }
+};
+
+/**
+ * Deletes a document and decrements the folder's file count.
+ */
+export const deleteDocument = async (familyId, folderId, documentId) => {
+  if (!familyId || !folderId || !documentId) return;
+
+  const docRef = firestore().doc(`families/${familyId}/documents/${documentId}`);
+  const folderRef = firestore().doc(`families/${familyId}/docFolders/${folderId}`);
+
+  try {
+    await firestore().runTransaction(async (t) => {
+      t.delete(docRef);
+      t.update(folderRef, {
+        fileCount: firestore.FieldValue.increment(-1),
+      });
+    });
+  } catch (error) {
+    console.error('Error deleting document:', error);
+    throw error;
+  }
+};/**
  * Updates the budget limit for a specific month.
  * Creates the budget document if it doesn't exist.
  */
