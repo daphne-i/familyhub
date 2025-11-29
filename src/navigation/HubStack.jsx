@@ -22,8 +22,12 @@ import BudgetScreen from '../screens/Budget/BudgetScreen';
 import NewTransactionScreen from '../screens/Budget/NewTransactionScreen';
 import DocumentsScreen from '../screens/Documents/DocumentsScreen';
 import FolderDetailScreen from '../screens/Documents/FolderDetailScreen';
-import MealPlannerScreen from '../screens/MealPlanner/MealPlannerScreen';
+import FileViewerScreen from '../screens/Documents/FileViewerScreen';
 import RecipeBoxScreen from '../screens/RecipeBox/RecipeBoxScreen';
+import RecipeDetailScreen from '../screens/RecipeBox/RecipeDetailScreen';
+import EditRecipeScreen from '../screens/RecipeBox/EditRecipeScreen';
+import AddRecipeToMealPlannerScreen from '../screens/RecipeBox/AddRecipeToMealPlannerScreen';
+import MealPlannerScreen from '../screens/MealPlanner/MealPlannerScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -70,9 +74,18 @@ const HubStack = () => {
       <Stack.Screen name="Documents" component={DocumentsScreen} />
       {/* 2. Register the screen here */}
       <Stack.Screen name="FolderDetail" component={FolderDetailScreen} />
+      <Stack.Screen 
+        name="FileViewer" 
+        component={FileViewerScreen}
+        options={{ presentation: 'fullScreenModal', animation: 'fade' }} 
+      />
        {/* Other Features */}
       <Stack.Screen name="MealPlanner" component={MealPlannerScreen} />
+  {/* Recipe Box Routes (NEW) */}
       <Stack.Screen name="RecipeBox" component={RecipeBoxScreen} />
+      <Stack.Screen name="RecipeDetail" component={RecipeDetailScreen} />
+      <Stack.Screen name="EditRecipe" component={EditRecipeScreen} />
+      <Stack.Screen name="AddRecipeToMealPlanner" component={AddRecipeToMealPlannerScreen} options={{ presentation: 'modal' }} />
     </Stack.Navigator>
   );
 };

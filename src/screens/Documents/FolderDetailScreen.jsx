@@ -35,7 +35,8 @@ const FolderHeader = ({ title }) => {
   );
 };
 
-const FileItem = ({ file, onDelete }) => {
+// Updated FileItem: Wrapped in TouchableOpacity and added onPress
+const FileItem = ({ file, onPress, onDelete }) => {
   const isImage = file.fileType && file.fileType.startsWith('image');
   
   const formatSize = (bytes) => {
@@ -47,7 +48,7 @@ const FileItem = ({ file, onDelete }) => {
   };
 
   return (
-    <View style={styles.fileRow}>
+    <TouchableOpacity style={styles.fileRow} onPress={onPress}>
       <View style={[styles.iconBox, isImage ? styles.iconBoxPurple : styles.iconBoxBlue]}>
         {isImage ? (
           <ImageIcon size={24} color={COLORS.purple} />
@@ -62,11 +63,12 @@ const FileItem = ({ file, onDelete }) => {
       <TouchableOpacity style={styles.moreButton} onPress={onDelete}>
         <Trash2 size={20} color={COLORS.text_light} />
       </TouchableOpacity>
-    </View>
+    </TouchableOpacity>
   );
 };
 
 const FolderDetailScreen = () => {
+  const navigation = useNavigation(); // Added navigation
   const route = useRoute();
   const { folderId, folderName } = route.params;
   const { familyId } = useFamily();
@@ -131,7 +133,11 @@ const FolderDetailScreen = () => {
             </View>
           }
           renderItem={({ item }) => (
-            <FileItem file={item} onDelete={() => handleDelete(item)} />
+            <FileItem 
+              file={item} 
+              onPress={() => navigation.navigate('FileViewer', { file: item })} // Navigate on press
+              onDelete={() => handleDelete(item)} 
+            />
           )}
         />
       )}
@@ -146,7 +152,7 @@ const FolderDetailScreen = () => {
         visible={isAddModalVisible}
         onClose={() => setAddModalVisible(false)}
         onUpload={handleUpload}
-        storagePrefix={`families/${familyId}/${folderId}`} // Pass the prefix
+        storagePrefix={`families/${familyId}/${folderId}`}
       />
     </View>
   );
