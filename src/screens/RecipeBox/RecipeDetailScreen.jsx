@@ -6,7 +6,6 @@ import {
   ScrollView,
   Image,
   TouchableOpacity,
-  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -89,12 +88,26 @@ const RecipeDetailScreen = () => {
           {/* Ingredients */}
           <Text style={styles.sectionTitle}>Ingredients</Text>
           {recipe.ingredients && recipe.ingredients.length > 0 ? (
-            recipe.ingredients.map((ing, index) => (
-              <View key={index} style={styles.ingredientRow}>
-                <View style={styles.bullet} />
-                <Text style={styles.bodyText}>{ing}</Text>
-              </View>
-            ))
+            recipe.ingredients.map((ing, index) => {
+              // Handle legacy string vs new structured object format
+              let text = '';
+              if (typeof ing === 'string') {
+                text = ing;
+              } else {
+                // Format: "2 cup Flour" or "4 Tomato"
+                // We don't show 'no' if it's the unit (e.g. "4 Tomato" instead of "4 no Tomato")
+                const qty = ing.qty ? ing.qty + ' ' : '';
+                const unit = (ing.unit && ing.unit !== 'no') ? ing.unit + ' ' : '';
+                text = `${qty}${unit}${ing.name}`;
+              }
+
+              return (
+                <View key={index} style={styles.ingredientRow}>
+                  <View style={styles.bullet} />
+                  <Text style={styles.bodyText}>{text}</Text>
+                </View>
+              );
+            })
           ) : (
             <Text style={styles.emptyText}>No ingredients listed.</Text>
           )}

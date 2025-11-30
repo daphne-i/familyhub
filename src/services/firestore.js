@@ -808,54 +808,36 @@ export const updateBudgetLimit = async (familyId, monthId, newLimit) => {
 // --- RECIPE FUNCTIONS ---
 
 /**
- * Adds a new recipe to the 'recipes' collection.
+ * Adds a new recipe.
  */
 export const addRecipe = async (familyId, recipeData) => {
-  if (!familyId || !recipeData) throw new Error('Missing data for addRecipe');
-
-  try {
-    // Use addFamilyDoc helper if available, or direct Firestore call
-    const path = `families/${familyId}/recipes`;
-    await firestore().collection(path).add({
-      ...recipeData,
-      createdAt: firestore.FieldValue.serverTimestamp(),
-      updatedAt: firestore.FieldValue.serverTimestamp(),
-    });
-  } catch (error) {
-    console.error('Error adding recipe:', error);
-    throw error;
-  }
+  if (!familyId || !recipeData) throw new Error('Missing data');
+  await addFamilyDoc(familyId, 'recipes', {
+    ...recipeData,
+    createdAt: firestore.FieldValue.serverTimestamp(),
+    updatedAt: firestore.FieldValue.serverTimestamp(),
+  });
 };
 
 /**
  * Updates an existing recipe.
  */
 export const updateRecipe = async (familyId, recipeId, updates) => {
-  if (!familyId || !recipeId || !updates) throw new Error('Missing data for updateRecipe');
+  if (!familyId || !recipeId || !updates) throw new Error('Missing data');
 
-  try {
-    const path = `families/${familyId}/recipes/${recipeId}`;
-    await firestore().doc(path).update({
-      ...updates,
-      updatedAt: firestore.FieldValue.serverTimestamp(),
-    });
-  } catch (error) {
-    console.error('Error updating recipe:', error);
-    throw error;
-  }
+  const path = `families/${familyId}/recipes/${recipeId}`;
+  await firestore().doc(path).update({
+    ...updates,
+    updatedAt: firestore.FieldValue.serverTimestamp(),
+  });
 };
 
 /**
  * Deletes a recipe.
  */
 export const deleteRecipe = async (familyId, recipeId) => {
-  if (!familyId || !recipeId) throw new Error('Missing data for deleteRecipe');
+  if (!familyId || !recipeId) throw new Error('Missing data');
 
-  try {
-    const path = `families/${familyId}/recipes/${recipeId}`;
-    await firestore().doc(path).delete();
-  } catch (error) {
-    console.error('Error deleting recipe:', error);
-    throw error;
-  }
+  const path = `families/${familyId}/recipes/${recipeId}`;
+  await firestore().doc(path).delete();
 };

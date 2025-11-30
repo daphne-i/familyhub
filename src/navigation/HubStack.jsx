@@ -28,6 +28,7 @@ import RecipeDetailScreen from '../screens/RecipeBox/RecipeDetailScreen';
 import EditRecipeScreen from '../screens/RecipeBox/EditRecipeScreen';
 import AddRecipeToMealPlannerScreen from '../screens/RecipeBox/AddRecipeToMealPlannerScreen';
 import MealPlannerScreen from '../screens/MealPlanner/MealPlannerScreen';
+import EditInstructionsScreen from '../screens/RecipeBox/EditInstructionsScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -85,6 +86,7 @@ const HubStack = () => {
       <Stack.Screen name="RecipeBox" component={RecipeBoxScreen} />
       <Stack.Screen name="RecipeDetail" component={RecipeDetailScreen} />
       <Stack.Screen name="EditRecipe" component={EditRecipeScreen} />
+      <Stack.Screen name="EditInstructions" component={EditInstructionsScreen} />
       <Stack.Screen name="AddRecipeToMealPlanner" component={AddRecipeToMealPlannerScreen} options={{ presentation: 'modal' }} />
     </Stack.Navigator>
   );

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -19,7 +19,9 @@ import {
   Plus, 
   Trash2, 
   Camera, 
-  XCircle 
+  XCircle,
+  ListPlus,
+  ChevronDown 
 } from 'lucide-react-native';
 import { launchImageLibrary } from 'react-native-image-picker';
 import storage from '@react-native-firebase/storage';
@@ -29,6 +31,7 @@ import { addRecipe, updateRecipe, deleteRecipe } from '../../services/firestore'
 import { useFamily } from '../../hooks/useFamily';
 import { useAuth } from '../../contexts/AuthContext';
 import { DEFAULT_RECIPE_CATEGORIES } from '../../constants';
+import UnitPickerModal from './UnitPickerModal'; // 1. Import Modal
 
 const { COLORS, FONT_SIZES, SPACING, RADII } = theme;
 
@@ -39,9 +42,8 @@ const EditRecipeScreen = () => {
   const { familyId } = useFamily();
   const { user } = useAuth();
   
-  const { mode, recipe } = route.params || {}; // mode: 'create' | 'edit'
+  const { mode, recipe } = route.params || {}; 
 
-  // --- State ---
   const [loading, setLoading] = useState(false);
   const [title, setTitle] = useState(recipe?.title || '');
   const [description, setDescription] = useState(recipe?.description || '');
@@ -49,13 +51,30 @@ const EditRecipeScreen = () => {
   const [servings, setServings] = useState(recipe?.servings || '');
   const [photoUrl, setPhotoUrl] = useState(recipe?.photoUrl || null);
   
-  // Dynamic Lists
-  const [ingredients, setIngredients] = useState(recipe?.ingredients || []);
+  // 2. Initialize Ingredients. Handle backward compatibility (string vs object)
+  const initialIngredients = (recipe?.ingredients || []).map(ing => {
+    if (typeof ing === 'string') {
+      // If legacy string data exists, put it in 'name' and leave rest empty
+      return { name: ing, qty: '', unit: 'no' };
+    }
+    return ing;
+  });
+
+  const [ingredients, setIngredients] = useState(initialIngredients);
   const [instructions, setInstructions] = useState(recipe?.instructions || []);
   const [categoryIds, setCategoryIds] = useState(recipe?.categoryIds || []);
 
-  // --- Handlers ---
+  // Unit Picker State
+  const [isUnitPickerVisible, setUnitPickerVisible] = useState(false);
+  const [activeIngredientIndex, setActiveIngredientIndex] = useState(null);
 
+  useEffect(() => {
+    if (route.params?.savedInstructions) {
+      setInstructions(route.params.savedInstructions);
+    }
+  }, [route.params?.savedInstructions]);
+
+  // ... (Image handling remains the same)
   const handleImagePick = async () => {
     const result = await launchImageLibrary({ 
       mediaType: 'photo', 
@@ -87,31 +106,38 @@ const EditRecipeScreen = () => {
     }
   };
 
-  // Ingredients Logic
-  const addIngredient = () => setIngredients([...ingredients, '']);
-  const updateIngredient = (text, index) => {
+  // --- UPDATED Ingredient Logic ---
+  const addIngredient = () => {
+    setIngredients([...ingredients, { name: '', qty: '', unit: 'no' }]);
+  };
+
+  const updateIngredient = (index, field, value) => {
     const newArr = [...ingredients];
-    newArr[index] = text;
+    newArr[index] = { ...newArr[index], [field]: value };
     setIngredients(newArr);
   };
+
   const removeIngredient = (index) => {
     const newArr = ingredients.filter((_, i) => i !== index);
     setIngredients(newArr);
   };
 
-  // Instructions Logic
-  const addInstruction = () => setInstructions([...instructions, '']);
-  const updateInstruction = (text, index) => {
-    const newArr = [...instructions];
-    newArr[index] = text;
-    setInstructions(newArr);
-  };
-  const removeInstruction = (index) => {
-    const newArr = instructions.filter((_, i) => i !== index);
-    setInstructions(newArr);
+  const openUnitPicker = (index) => {
+    setActiveIngredientIndex(index);
+    setUnitPickerVisible(true);
   };
 
-  // Category Logic
+  const handleUnitSelect = (unit) => {
+    if (activeIngredientIndex !== null) {
+      updateIngredient(activeIngredientIndex, 'unit', unit);
+    }
+  };
+
+  // ... (Instructions & Categories logic remains the same)
+  const handleEditInstructions = () => {
+    navigation.navigate('EditInstructions', { currentInstructions: instructions });
+  };
+
   const toggleCategory = (id) => {
     if (categoryIds.includes(id)) {
       setCategoryIds(categoryIds.filter(c => c !== id));
@@ -128,18 +154,17 @@ const EditRecipeScreen = () => {
 
     setLoading(true);
     try {
-      // Filter out empty rows
-      const cleanIngredients = ingredients.filter(i => i && i.trim() !== '');
-      const cleanInstructions = instructions.filter(i => i && i.trim() !== '');
-
+      // Filter out empty rows (check name)
+      const cleanIngredients = ingredients.filter(i => i.name.trim() !== '');
+      
       const recipeData = {
         title,
         description,
         cookTime,
         servings,
         photoUrl,
-        ingredients: cleanIngredients,
-        instructions: cleanInstructions,
+        ingredients: cleanIngredients, // Now saving array of objects
+        instructions,
         categoryIds,
         updatedBy: user.uid,
       };
@@ -158,7 +183,6 @@ const EditRecipeScreen = () => {
       
     } catch (error) {
       console.error(error);
-      // Show the actual error message
       Alert.alert('Error', `Failed to save recipe: ${error.message}`);
     } finally {
       setLoading(false);
@@ -187,7 +211,6 @@ const EditRecipeScreen = () => {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconButton}>
           <ArrowLeft size={24} color={COLORS.text_dark} />
@@ -206,8 +229,7 @@ const EditRecipeScreen = () => {
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
-        
-        {/* Photo Picker */}
+        {/* ... (Photo Picker & Title/Desc inputs remain the same) ... */}
         <TouchableOpacity style={styles.photoContainer} onPress={handleImagePick}>
           {photoUrl ? (
             <Image source={{ uri: photoUrl }} style={styles.photo} />
@@ -241,27 +263,15 @@ const EditRecipeScreen = () => {
         <View style={styles.row}>
           <View style={{ flex: 1, marginRight: SPACING.md }}>
             <Text style={styles.label}>Time</Text>
-            <TextInput 
-              style={styles.input} 
-              placeholder="30m" 
-              placeholderTextColor={COLORS.text_light}
-              value={cookTime} 
-              onChangeText={setCookTime} 
-            />
+            <TextInput style={styles.input} placeholder="30m" value={cookTime} onChangeText={setCookTime} />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.label}>Servings</Text>
-            <TextInput 
-              style={styles.input} 
-              placeholder="4" 
-              placeholderTextColor={COLORS.text_light}
-              value={servings} 
-              onChangeText={setServings} 
-            />
+            <TextInput style={styles.input} placeholder="4" value={servings} onChangeText={setServings} />
           </View>
         </View>
 
-        {/* Categories */}
+         {/* Categories */}
         <Text style={styles.label}>Categories</Text>
         <View style={styles.tagsContainer}>
           {DEFAULT_RECIPE_CATEGORIES.map((cat) => {
@@ -279,21 +289,40 @@ const EditRecipeScreen = () => {
           })}
         </View>
 
-        {/* Ingredients */}
+        {/* --- INGREDIENTS SECTION --- */}
         <View style={styles.sectionHeaderRow}>
           <Text style={styles.sectionTitle}>Ingredients</Text>
           <TouchableOpacity onPress={addIngredient}>
-            <Plus size={20} color={COLORS.primary} />
+             <Plus size={20} color={COLORS.primary} />
           </TouchableOpacity>
         </View>
+        
         {ingredients.map((ing, index) => (
-          <View key={index} style={styles.dynamicRow}>
+          <View key={index} style={styles.ingredientRow}>
+            {/* Quantity */}
             <TextInput
-              style={[styles.input, styles.dynamicInput]}
-              placeholder={`Ingredient ${index + 1}`}
+              style={[styles.input, styles.qtyInput]}
+              placeholder="1"
               placeholderTextColor={COLORS.text_light}
-              value={ing}
-              onChangeText={(t) => updateIngredient(t, index)}
+              value={ing.qty}
+              onChangeText={(t) => updateIngredient(index, 'qty', t)}
+              keyboardType="numeric"
+            />
+            {/* Unit Selector */}
+            <TouchableOpacity 
+              style={styles.unitButton} 
+              onPress={() => openUnitPicker(index)}>
+              <Text style={styles.unitText}>{ing.unit || 'no'}</Text>
+              <ChevronDown size={14} color={COLORS.text_light} />
+            </TouchableOpacity>
+            
+            {/* Name */}
+            <TextInput
+              style={[styles.input, styles.nameInput]}
+              placeholder="Ingredient name"
+              placeholderTextColor={COLORS.text_light}
+              value={ing.name}
+              onChangeText={(t) => updateIngredient(index, 'name', t)}
             />
             <TouchableOpacity onPress={() => removeIngredient(index)} style={styles.removeBtn}>
               <XCircle size={20} color={COLORS.text_light} />
@@ -301,37 +330,43 @@ const EditRecipeScreen = () => {
           </View>
         ))}
 
+        <TouchableOpacity style={styles.addItemButton} onPress={addIngredient}>
+            <ListPlus size={18} color={COLORS.text_light} style={{marginRight: 8}} />
+            <Text style={styles.addItemText}>Add ingredient</Text>
+        </TouchableOpacity>
+
         {/* Instructions */}
-        <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionTitle}>Instructions</Text>
-          <TouchableOpacity onPress={addInstruction}>
-            <Plus size={20} color={COLORS.primary} />
-          </TouchableOpacity>
+        <Text style={[styles.sectionTitle, { marginTop: SPACING.xl }]}>Instructions</Text>
+        <View style={styles.instructionsList}>
+            {instructions.map((inst, index) => (
+                <View key={index} style={styles.instructionItem}>
+                    <Text style={styles.stepNum}>{index + 1}.</Text>
+                    <Text style={styles.instructionText}>{inst}</Text>
+                </View>
+            ))}
         </View>
-        {instructions.map((inst, index) => (
-          <View key={index} style={styles.dynamicRow}>
-            <Text style={styles.stepNum}>{index + 1}.</Text>
-            <TextInput
-              style={[styles.input, styles.dynamicInput, { height: 'auto', minHeight: 40 }]}
-              placeholder={`Step ${index + 1}`}
-              placeholderTextColor={COLORS.text_light}
-              value={inst}
-              onChangeText={(t) => updateInstruction(t, index)}
-              multiline
-            />
-            <TouchableOpacity onPress={() => removeInstruction(index)} style={styles.removeBtn}>
-              <XCircle size={20} color={COLORS.text_light} />
-            </TouchableOpacity>
-          </View>
-        ))}
+
+        <TouchableOpacity style={styles.addItemButton} onPress={handleEditInstructions}>
+            <ListPlus size={18} color={COLORS.text_light} style={{marginRight: 8}} />
+            <Text style={styles.addItemText}>
+                {instructions.length > 0 ? 'Edit instructions' : 'Add instructions'}
+            </Text>
+        </TouchableOpacity>
 
         <View style={{ height: 50 }} />
       </ScrollView>
+      
+      <UnitPickerModal
+        visible={isUnitPickerVisible}
+        onClose={() => setUnitPickerVisible(false)}
+        onSelect={handleUnitSelect}
+      />
     </View>
   );
 };
 
 const styles = StyleSheet.create({
+  // ... (Keep existing container, header, photo, input styles) ...
   container: {
     flex: 1,
     backgroundColor: COLORS.background_white,
@@ -389,14 +424,12 @@ const styles = StyleSheet.create({
     marginTop: SPACING.md,
   },
   input: {
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: RADII.md,
-    padding: SPACING.md,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    paddingVertical: SPACING.sm,
     fontSize: FONT_SIZES.md,
     color: COLORS.text_dark,
-    backgroundColor: COLORS.white,
-    height: 48,
+    height: 40,
   },
   textArea: {
     height: 80,
@@ -439,26 +472,72 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: FONT_SIZES.md,
-    fontWeight: 'bold',
-    color: COLORS.text_dark,
+    color: COLORS.text_light,
   },
-  dynamicRow: {
+  
+  // --- New Ingredient Row Styles ---
+  ingredientRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: SPACING.sm,
+    marginBottom: SPACING.xs,
   },
-  dynamicInput: {
+  qtyInput: {
+    width: 50,
+    textAlign: 'center',
+    marginRight: SPACING.sm,
+  },
+  unitButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.background_light,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 8,
+    borderRadius: RADII.sm,
+    marginRight: SPACING.sm,
+    minWidth: 60,
+    justifyContent: 'space-between',
+  },
+  unitText: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.text_dark,
+    marginRight: 4,
+  },
+  nameInput: {
     flex: 1,
   },
   removeBtn: {
     padding: SPACING.sm,
     marginLeft: SPACING.xs,
   },
+  addItemButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: SPACING.sm,
+    paddingVertical: SPACING.sm,
+  },
+  addItemText: {
+    fontSize: FONT_SIZES.md,
+    color: COLORS.text_dark,
+    fontWeight: '500',
+  },
+  instructionsList: {
+    marginTop: SPACING.sm,
+  },
+  instructionItem: {
+    flexDirection: 'row',
+    marginBottom: SPACING.sm,
+  },
   stepNum: {
-    width: 24,
+    width: 20,
     fontSize: FONT_SIZES.md,
     fontWeight: 'bold',
     color: COLORS.text_light,
+    marginRight: SPACING.sm,
+  },
+  instructionText: {
+    flex: 1,
+    fontSize: FONT_SIZES.md,
+    color: COLORS.text_dark,
   },
 });
 
