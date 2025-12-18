@@ -841,3 +841,68 @@ export const deleteRecipe = async (familyId, recipeId) => {
   const path = `families/${familyId}/recipes/${recipeId}`;
   await firestore().doc(path).delete();
 };
+
+// --- MEAL PLANNER FUNCTIONS ---
+
+/**
+ * Hook to get meal plans for a specific date range.
+ * Useful for a weekly view.
+ */
+export const useMealPlanRange = (startDate, endDate) => {
+  const { user } = useAuth();
+  const { familyId } = useFamily();
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user || !familyId || !startDate || !endDate) {
+      setLoading(false);
+      return;
+    }
+
+    const start = firestore.Timestamp.fromDate(startDate);
+    const end = firestore.Timestamp.fromDate(endDate);
+
+    const unsubscribe = firestore()
+      .collection(`families/${familyId}/mealPlan`)
+      .where('date', '>=', start)
+      .where('date', '<=', end)
+      .onSnapshot(
+        (snapshot) => {
+          const meals = [];
+          snapshot.forEach(doc => meals.push({ id: doc.id, ...doc.data() }));
+          setData(meals);
+          setLoading(false);
+        },
+        (error) => {
+          console.error("Error fetching meal plan:", error);
+          setLoading(false);
+        }
+      );
+
+    return () => unsubscribe();
+  }, [user, familyId, startDate, endDate]);
+
+  return { data, loading };
+};
+
+/**
+ * Add or Update a meal entry.
+ * Logic: We store each "slot" (e.g., 2023-10-25_lunch) as a document, 
+ * or we store the day as a document. 
+ * Design Doc Strategy: Store individual meal items to allow multiple items per slot.
+ */
+export const addMealItem = async (familyId, mealData) => {
+  if (!familyId || !mealData) throw new Error("Missing data");
+  
+  // mealData should contain: date (Timestamp), slot (string: 'breakfast'), type ('recipe'|'manual'), title, etc.
+  await addFamilyDoc(familyId, 'mealPlan', {
+    ...mealData,
+    createdAt: firestore.FieldValue.serverTimestamp(),
+  });
+};
+
+export const deleteMealItem = async (familyId, mealId) => {
+  if (!familyId || !mealId) return;
+  await firestore().doc(`families/${familyId}/mealPlan/${mealId}`).delete();
+};

@@ -2,35 +2,44 @@ import React, { createContext, useState, useEffect, useContext } from 'react';
 import firestore from '@react-native-firebase/firestore';
 import { useAuth } from './AuthContext';
 
-// 1. Create the Context
 const FamilyContext = createContext();
 
-// 2. Create the Provider
 const FamilyProvider = ({ children }) => {
-  const { user } = useAuth(); // Get the logged-in user
+  const { user } = useAuth();
   const [familyId, setFamilyId] = useState(null);
   const [loadingFamily, setLoadingFamily] = useState(true);
-  const [membersList, setMembersList] = useState([]); // NEW: List of member objects
-  const [familyDoc, setFamilyDoc] = useState(null); // NEW: The family doc itself
+  const [membersList, setMembersList] = useState([]);
+  const [familyDoc, setFamilyDoc] = useState(null);
+
+  // Debugging logs
+  useEffect(() => {
+    console.log(`[FamilyContext] Current User: ${user ? user.uid : 'No User'}`);
+    console.log(`[FamilyContext] Current FamilyId: ${familyId}`);
+  }, [user, familyId]);
 
   // Effect 1: Get the user's familyId
   useEffect(() => {
     if (user) {
+      console.log('[FamilyContext] Setting up user listener...');
       const unsubscribe = firestore()
         .collection('users')
         .doc(user.uid)
         .onSnapshot(
           (documentSnapshot) => {
             const userData = documentSnapshot.data();
-            if (documentSnapshot.exists && userData) {
-              setFamilyId(userData.familyId || null);
+            console.log('[FamilyContext] User doc update received:', userData);
+            
+            if (documentSnapshot.exists && userData && userData.familyId) {
+              console.log('[FamilyContext] Found familyId:', userData.familyId);
+              setFamilyId(userData.familyId);
             } else {
+              console.log('[FamilyContext] No familyId found on user doc.');
               setFamilyId(null);
             }
             setLoadingFamily(false);
           },
           (error) => {
-            console.error('FamilyContext: Error fetching user doc:', error);
+            console.error('[FamilyContext] Error fetching user doc:', error);
             setFamilyId(null);
             setLoadingFamily(false);
           },
@@ -44,7 +53,7 @@ const FamilyProvider = ({ children }) => {
     }
   }, [user]);
 
-  // Effect 2: Get family details and members *after* we have a familyId
+  // Effect 2: Get family details
   useEffect(() => {
     if (!familyId) {
       setMembersList([]);
@@ -52,7 +61,6 @@ const FamilyProvider = ({ children }) => {
       return;
     }
 
-    // A. Listen to the family document itself
     const familySub = firestore()
       .collection('families')
       .doc(familyId)
@@ -60,10 +68,8 @@ const FamilyProvider = ({ children }) => {
         if (doc.exists) {
           setFamilyDoc({ id: doc.id, ...doc.data() });
 
-          // B. Now fetch the members listed in the family doc
           const memberIds = doc.data().members || [];
           if (memberIds.length > 0) {
-            // C. Listen to all user documents that are in the members array
             const membersSub = firestore()
               .collection('users')
               .where(firestore.FieldPath.documentId(), 'in', memberIds)
@@ -74,34 +80,32 @@ const FamilyProvider = ({ children }) => {
                 });
                 setMembersList(members);
               });
-            return () => membersSub(); // Unsubscribe from members listener
+            return () => membersSub();
           } else {
-            setMembersList([]); // No member IDs
+            setMembersList([]);
           }
         } else {
-          // Family doc doesn't exist
           setFamilyDoc(null);
           setMembersList([]);
         }
       });
 
-    return () => familySub(); // Unsubscribe from family listener
-  }, [familyId]); // This effect re-runs when familyId changes
+    return () => familySub();
+  }, [familyId]);
 
   return (
     <FamilyContext.Provider
       value={{
         familyId,
         loadingFamily,
-        familyDoc, // e.g., for familyName, inviteCode
-        membersList, // The full list of user objects
+        familyDoc,
+        membersList,
       }}>
       {children}
     </FamilyContext.Provider>
   );
 };
 
-// 3. Create the custom hook
 const useFamily = () => {
   const context = useContext(FamilyContext);
   if (context === undefined) {
