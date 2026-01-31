@@ -29,6 +29,7 @@ import EditRecipeScreen from '../screens/RecipeBox/EditRecipeScreen';
 import AddRecipeToMealPlannerScreen from '../screens/RecipeBox/AddRecipeToMealPlannerScreen';
 import MealPlannerScreen from '../screens/MealPlanner/MealPlannerScreen';
 import EditInstructionsScreen from '../screens/RecipeBox/EditInstructionsScreen';
+import DishPickerScreen from '../screens/MealPlanner/DishPickerScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -82,6 +83,11 @@ const HubStack = () => {
       />
        {/* Other Features */}
       <Stack.Screen name="MealPlanner" component={MealPlannerScreen} />
+      <Stack.Screen 
+  name="DishPicker" 
+  component={DishPickerScreen} 
+  options={{ presentation: 'modal' }} 
+/>
   {/* Recipe Box Routes (NEW) */}
       <Stack.Screen name="RecipeBox" component={RecipeBoxScreen} />
       <Stack.Screen name="RecipeDetail" component={RecipeDetailScreen} />
