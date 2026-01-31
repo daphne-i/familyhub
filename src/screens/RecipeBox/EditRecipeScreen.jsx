@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -31,7 +31,7 @@ import { addRecipe, updateRecipe, deleteRecipe } from '../../services/firestore'
 import { useFamily } from '../../hooks/useFamily';
 import { useAuth } from '../../contexts/AuthContext';
 import { DEFAULT_RECIPE_CATEGORIES } from '../../constants';
-import UnitPickerModal from './UnitPickerModal'; // 1. Import Modal
+import UnitPickerModal from './UnitPickerModal'; 
 
 const { COLORS, FONT_SIZES, SPACING, RADII } = theme;
 
@@ -42,6 +42,7 @@ const EditRecipeScreen = () => {
   const { familyId } = useFamily();
   const { user } = useAuth();
   
+  // Destructure initial params
   const { mode, recipe } = route.params || {}; 
 
   const [loading, setLoading] = useState(false);
@@ -51,10 +52,9 @@ const EditRecipeScreen = () => {
   const [servings, setServings] = useState(recipe?.servings || '');
   const [photoUrl, setPhotoUrl] = useState(recipe?.photoUrl || null);
   
-  // 2. Initialize Ingredients. Handle backward compatibility (string vs object)
+  // Initialize Ingredients safely
   const initialIngredients = (recipe?.ingredients || []).map(ing => {
     if (typeof ing === 'string') {
-      // If legacy string data exists, put it in 'name' and leave rest empty
       return { name: ing, qty: '', unit: 'no' };
     }
     return ing;
@@ -68,13 +68,6 @@ const EditRecipeScreen = () => {
   const [isUnitPickerVisible, setUnitPickerVisible] = useState(false);
   const [activeIngredientIndex, setActiveIngredientIndex] = useState(null);
 
-  useEffect(() => {
-    if (route.params?.savedInstructions) {
-      setInstructions(route.params.savedInstructions);
-    }
-  }, [route.params?.savedInstructions]);
-
-  // ... (Image handling remains the same)
   const handleImagePick = async () => {
     const result = await launchImageLibrary({ 
       mediaType: 'photo', 
@@ -106,7 +99,6 @@ const EditRecipeScreen = () => {
     }
   };
 
-  // --- UPDATED Ingredient Logic ---
   const addIngredient = () => {
     setIngredients([...ingredients, { name: '', qty: '', unit: 'no' }]);
   };
@@ -133,9 +125,15 @@ const EditRecipeScreen = () => {
     }
   };
 
-  // ... (Instructions & Categories logic remains the same)
+  // --- THE FIX: Pass a callback function ---
   const handleEditInstructions = () => {
-    navigation.navigate('EditInstructions', { currentInstructions: instructions });
+    navigation.navigate('EditInstructions', { 
+      currentInstructions: instructions,
+      // Pass this function to the next screen
+      onSave: (newInstructions) => {
+        setInstructions(newInstructions);
+      }
+    });
   };
 
   const toggleCategory = (id) => {
@@ -154,7 +152,6 @@ const EditRecipeScreen = () => {
 
     setLoading(true);
     try {
-      // Filter out empty rows (check name)
       const cleanIngredients = ingredients.filter(i => i.name.trim() !== '');
       
       const recipeData = {
@@ -163,10 +160,11 @@ const EditRecipeScreen = () => {
         cookTime,
         servings,
         photoUrl,
-        ingredients: cleanIngredients, // Now saving array of objects
+        ingredients: cleanIngredients,
         instructions,
         categoryIds,
         updatedBy: user.uid,
+        titleLower: title.toLowerCase(),
       };
 
       if (mode === 'create') {
@@ -229,7 +227,7 @@ const EditRecipeScreen = () => {
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
-        {/* ... (Photo Picker & Title/Desc inputs remain the same) ... */}
+        {/* Photo Picker */}
         <TouchableOpacity style={styles.photoContainer} onPress={handleImagePick}>
           {photoUrl ? (
             <Image source={{ uri: photoUrl }} style={styles.photo} />
@@ -271,7 +269,7 @@ const EditRecipeScreen = () => {
           </View>
         </View>
 
-         {/* Categories */}
+        {/* Categories */}
         <Text style={styles.label}>Categories</Text>
         <View style={styles.tagsContainer}>
           {DEFAULT_RECIPE_CATEGORIES.map((cat) => {
@@ -289,7 +287,7 @@ const EditRecipeScreen = () => {
           })}
         </View>
 
-        {/* --- INGREDIENTS SECTION --- */}
+        {/* Ingredients */}
         <View style={styles.sectionHeaderRow}>
           <Text style={styles.sectionTitle}>Ingredients</Text>
           <TouchableOpacity onPress={addIngredient}>
@@ -299,7 +297,6 @@ const EditRecipeScreen = () => {
         
         {ingredients.map((ing, index) => (
           <View key={index} style={styles.ingredientRow}>
-            {/* Quantity */}
             <TextInput
               style={[styles.input, styles.qtyInput]}
               placeholder="1"
@@ -308,7 +305,6 @@ const EditRecipeScreen = () => {
               onChangeText={(t) => updateIngredient(index, 'qty', t)}
               keyboardType="numeric"
             />
-            {/* Unit Selector */}
             <TouchableOpacity 
               style={styles.unitButton} 
               onPress={() => openUnitPicker(index)}>
@@ -316,7 +312,6 @@ const EditRecipeScreen = () => {
               <ChevronDown size={14} color={COLORS.text_light} />
             </TouchableOpacity>
             
-            {/* Name */}
             <TextInput
               style={[styles.input, styles.nameInput]}
               placeholder="Ingredient name"
@@ -366,179 +361,38 @@ const EditRecipeScreen = () => {
 };
 
 const styles = StyleSheet.create({
-  // ... (Keep existing container, header, photo, input styles) ...
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background_white,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: SPACING.lg,
-    paddingBottom: SPACING.md,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
-  },
-  headerTitle: {
-    fontSize: FONT_SIZES.lg,
-    fontWeight: 'bold',
-    color: COLORS.text_dark,
-  },
-  iconButton: {
-    padding: SPACING.xs,
-  },
-  content: {
-    padding: SPACING.lg,
-  },
-  photoContainer: {
-    height: 200,
-    backgroundColor: COLORS.background_light,
-    borderRadius: RADII.lg,
-    marginBottom: SPACING.lg,
-    overflow: 'hidden',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderStyle: 'dashed',
-  },
-  photo: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'cover',
-  },
-  photoPlaceholder: {
-    alignItems: 'center',
-  },
-  photoText: {
-    color: COLORS.text_light,
-    marginTop: SPACING.sm,
-    fontSize: FONT_SIZES.sm,
-  },
-  label: {
-    fontSize: FONT_SIZES.sm,
-    fontWeight: '600',
-    color: COLORS.text_dark,
-    marginBottom: SPACING.xs,
-    marginTop: SPACING.md,
-  },
-  input: {
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
-    paddingVertical: SPACING.sm,
-    fontSize: FONT_SIZES.md,
-    color: COLORS.text_dark,
-    height: 40,
-  },
-  textArea: {
-    height: 80,
-    textAlignVertical: 'top',
-  },
-  row: {
-    flexDirection: 'row',
-  },
-  tagsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
-  tag: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    marginRight: 8,
-    marginBottom: 8,
-  },
-  tagSelected: {
-    backgroundColor: COLORS.primary_light,
-    borderColor: COLORS.primary,
-  },
-  tagText: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.text,
-  },
-  tagTextSelected: {
-    color: COLORS.primary,
-    fontWeight: '600',
-  },
-  sectionHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: SPACING.xl,
-    marginBottom: SPACING.sm,
-  },
-  sectionTitle: {
-    fontSize: FONT_SIZES.md,
-    color: COLORS.text_light,
-  },
-  
-  // --- New Ingredient Row Styles ---
-  ingredientRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: SPACING.xs,
-  },
-  qtyInput: {
-    width: 50,
-    textAlign: 'center',
-    marginRight: SPACING.sm,
-  },
-  unitButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.background_light,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 8,
-    borderRadius: RADII.sm,
-    marginRight: SPACING.sm,
-    minWidth: 60,
-    justifyContent: 'space-between',
-  },
-  unitText: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.text_dark,
-    marginRight: 4,
-  },
-  nameInput: {
-    flex: 1,
-  },
-  removeBtn: {
-    padding: SPACING.sm,
-    marginLeft: SPACING.xs,
-  },
-  addItemButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: SPACING.sm,
-    paddingVertical: SPACING.sm,
-  },
-  addItemText: {
-    fontSize: FONT_SIZES.md,
-    color: COLORS.text_dark,
-    fontWeight: '500',
-  },
-  instructionsList: {
-    marginTop: SPACING.sm,
-  },
-  instructionItem: {
-    flexDirection: 'row',
-    marginBottom: SPACING.sm,
-  },
-  stepNum: {
-    width: 20,
-    fontSize: FONT_SIZES.md,
-    fontWeight: 'bold',
-    color: COLORS.text_light,
-    marginRight: SPACING.sm,
-  },
-  instructionText: {
-    flex: 1,
-    fontSize: FONT_SIZES.md,
-    color: COLORS.text_dark,
-  },
+  container: { flex: 1, backgroundColor: COLORS.background_white },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: SPACING.lg, paddingBottom: SPACING.md, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  headerTitle: { fontSize: FONT_SIZES.lg, fontWeight: 'bold', color: COLORS.text_dark },
+  iconButton: { padding: SPACING.xs },
+  content: { padding: SPACING.lg },
+  photoContainer: { height: 200, backgroundColor: COLORS.background_light, borderRadius: RADII.lg, marginBottom: SPACING.lg, overflow: 'hidden', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: COLORS.border, borderStyle: 'dashed' },
+  photo: { width: '100%', height: '100%', resizeMode: 'cover' },
+  photoPlaceholder: { alignItems: 'center' },
+  photoText: { color: COLORS.text_light, marginTop: SPACING.sm, fontSize: FONT_SIZES.sm },
+  label: { fontSize: FONT_SIZES.sm, fontWeight: '600', color: COLORS.text_dark, marginBottom: SPACING.xs, marginTop: SPACING.md },
+  input: { borderBottomWidth: 1, borderBottomColor: COLORS.border, paddingVertical: SPACING.sm, fontSize: FONT_SIZES.md, color: COLORS.text_dark, height: 40 },
+  textArea: { height: 80, textAlignVertical: 'top' },
+  row: { flexDirection: 'row' },
+  tagsContainer: { flexDirection: 'row', flexWrap: 'wrap' },
+  tag: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, borderWidth: 1, borderColor: COLORS.border, marginRight: 8, marginBottom: 8 },
+  tagSelected: { backgroundColor: COLORS.primary_light, borderColor: COLORS.primary },
+  tagText: { fontSize: FONT_SIZES.sm, color: COLORS.text },
+  tagTextSelected: { color: COLORS.primary, fontWeight: '600' },
+  sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: SPACING.xl, marginBottom: SPACING.sm },
+  sectionTitle: { fontSize: FONT_SIZES.md, color: COLORS.text_light },
+  ingredientRow: { flexDirection: 'row', alignItems: 'center', marginBottom: SPACING.xs },
+  qtyInput: { width: 50, textAlign: 'center', marginRight: SPACING.sm },
+  unitButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.background_light, paddingHorizontal: SPACING.sm, paddingVertical: 8, borderRadius: RADII.sm, marginRight: SPACING.sm, minWidth: 60, justifyContent: 'space-between' },
+  unitText: { fontSize: FONT_SIZES.sm, color: COLORS.text_dark, marginRight: 4 },
+  nameInput: { flex: 1 },
+  removeBtn: { padding: SPACING.sm, marginLeft: SPACING.xs },
+  addItemButton: { flexDirection: 'row', alignItems: 'center', marginTop: SPACING.sm, paddingVertical: SPACING.sm },
+  addItemText: { fontSize: FONT_SIZES.md, color: COLORS.text_dark, fontWeight: '500' },
+  instructionsList: { marginTop: SPACING.sm },
+  instructionItem: { flexDirection: 'row', marginBottom: SPACING.sm },
+  stepNum: { width: 20, fontSize: FONT_SIZES.md, fontWeight: 'bold', color: COLORS.text_light, marginRight: SPACING.sm },
+  instructionText: { flex: 1, fontSize: FONT_SIZES.md, color: COLORS.text_dark },
 });
 
 export default EditRecipeScreen;

@@ -21,7 +21,7 @@ const EditInstructionsScreen = () => {
   const insets = useSafeAreaInsets();
   
   // Get existing data passed from EditRecipeScreen
-  const { currentInstructions } = route.params;
+  const { currentInstructions } = route.params || {};
 
   // Join array into a string for the text input
   const [text, setText] = useState(
@@ -35,12 +35,14 @@ const EditInstructionsScreen = () => {
       .map(line => line.trim())
       .filter(line => line !== '');
 
-    // Navigate back, passing the new data to the previous screen
-    navigation.navigate({
-      name: 'EditRecipe',
-      params: { savedInstructions: instructionsArray },
-      merge: true,
-    });
+    // 1. Check if an onSave callback was passed
+    if (route.params?.onSave) {
+      route.params.onSave(instructionsArray);
+    }
+
+    // 2. Go back to the PREVIOUS screen (the one that opened this), 
+    //    instead of pushing a new screen.
+    navigation.goBack();
   };
 
   return (
@@ -69,7 +71,7 @@ const EditInstructionsScreen = () => {
           value={text}
           onChangeText={setText}
           autoFocus
-          textAlignVertical="top"
+          textAlignVertical="top" 
         />
       </KeyboardAvoidingView>
     </View>
@@ -103,7 +105,7 @@ const styles = StyleSheet.create({
     padding: SPACING.lg,
     fontSize: FONT_SIZES.md,
     color: COLORS.text_dark,
-    textAlignVertical: 'top', // Android fix for multiline
+    textAlignVertical: 'top', // Critical for Android Multiline
   },
 });
 

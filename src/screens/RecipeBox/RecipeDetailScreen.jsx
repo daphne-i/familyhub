@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,8 @@ import {
   ScrollView,
   Image,
   TouchableOpacity,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -14,10 +16,13 @@ import {
   Clock,
   Users,
   Utensils,
-  MoreVertical,
+  Edit2,
+  Trash2,
   CalendarPlus,
 } from 'lucide-react-native';
 import * as theme from '../../utils/theme';
+import { useFamily } from '../../hooks/useFamily';
+import { deleteRecipe, useFamilyDocument } from '../../services/firestore';
 
 const { COLORS, FONT_SIZES, SPACING, RADII } = theme;
 
@@ -32,11 +37,74 @@ const RecipeDetailScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
   const insets = useSafeAreaInsets();
-  const { recipe } = route.params;
+  const { familyId } = useFamily();
+
+  // 1. Get params safely. 
+  // 'recipe' might be the full object (from RecipeBox) OR just { id, title } (from MealPlanner)
+  const { recipeId, recipe: initialRecipeData } = route.params || {};
+
+  // 2. Fetch the latest full recipe data from Firestore
+  // This ensures we get ingredients/instructions if we only started with an ID
+  const activeId = recipeId || (initialRecipeData ? initialRecipeData.id : null);
+  
+  const { data: fetchedRecipe, loading } = useFamilyDocument(
+    activeId ? `recipes/${activeId}` : null
+  );
+
+  // 3. Merge data: Use fetched data if available, otherwise fallback to params
+  const recipe = fetchedRecipe || initialRecipeData;
 
   const handleEdit = () => {
-    navigation.navigate('EditRecipe', { recipe, mode: 'edit' });
+    // Pass the full recipe object to edit screen
+    if (recipe) {
+      navigation.navigate('EditRecipe', { recipe, mode: 'edit' });
+    }
   };
+
+  const handleDelete = () => {
+    Alert.alert(
+      "Delete Recipe",
+      "Are you sure you want to delete this recipe? This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { 
+          text: "Delete", 
+          style: "destructive", 
+          onPress: async () => {
+            if (activeId) {
+              await deleteRecipe(familyId, activeId);
+              navigation.goBack();
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleAddToMealPlan = () => {
+    navigation.navigate('AddRecipeToMealPlanner', { recipe });
+  };
+
+  // 4. Loading State
+  if (loading && !recipe) {
+    return (
+      <View style={[styles.container, styles.center]}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+      </View>
+    );
+  }
+
+  // 5. Error State
+  if (!recipe) {
+    return (
+      <View style={[styles.container, styles.center]}>
+        <Text style={styles.emptyText}>Recipe not found.</Text>
+        <TouchableOpacity style={styles.planButton} onPress={() => navigation.goBack()}>
+             <Text style={styles.planButtonText}>Go Back</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -58,9 +126,15 @@ const RecipeDetailScreen = () => {
               onPress={() => navigation.goBack()}>
               <ArrowLeft size={24} color={COLORS.white} />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.iconButton} onPress={handleEdit}>
-              <MoreVertical size={24} color={COLORS.white} />
-            </TouchableOpacity>
+            
+            <View style={{ flexDirection: 'row' }}>
+              <TouchableOpacity style={[styles.iconButton, { marginRight: 8 }]} onPress={handleEdit}>
+                <Edit2 size={24} color={COLORS.white} />
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.iconButton, { backgroundColor: 'rgba(255,0,0,0.4)' }]} onPress={handleDelete}>
+                <Trash2 size={24} color={COLORS.white} />
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
 
@@ -94,8 +168,6 @@ const RecipeDetailScreen = () => {
               if (typeof ing === 'string') {
                 text = ing;
               } else {
-                // Format: "2 cup Flour" or "4 Tomato"
-                // We don't show 'no' if it's the unit (e.g. "4 Tomato" instead of "4 no Tomato")
                 const qty = ing.qty ? ing.qty + ' ' : '';
                 const unit = (ing.unit && ing.unit !== 'no') ? ing.unit + ' ' : '';
                 text = `${qty}${unit}${ing.name}`;
@@ -133,7 +205,7 @@ const RecipeDetailScreen = () => {
       <View style={[styles.footer, { paddingBottom: insets.bottom || SPACING.lg }]}>
         <TouchableOpacity 
           style={styles.planButton}
-          onPress={() => navigation.navigate('AddRecipeToMealPlanner', { recipe })}
+          onPress={handleAddToMealPlan}
         >
           <CalendarPlus size={20} color={COLORS.white} style={{ marginRight: 8 }} />
           <Text style={styles.planButtonText}>Add to Meal Plan</Text>
@@ -147,6 +219,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background_white,
+  },
+  center: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   imageContainer: {
     height: 300,
@@ -171,12 +247,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: SPACING.md,
     paddingBottom: SPACING.md,
-    backgroundColor: 'rgba(0,0,0,0.3)', // gradient-like overlay
+    backgroundColor: 'rgba(0,0,0,0.2)', // gradient-like overlay
   },
   iconButton: {
     padding: SPACING.sm,
     borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.2)',
+    backgroundColor: 'rgba(0,0,0,0.4)',
   },
   content: {
     padding: SPACING.lg,
