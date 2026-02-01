@@ -16,6 +16,7 @@ import {
   Utensils, 
   ArrowRight,
   CheckCircle2,
+  Settings,
   AlertCircle
 } from 'lucide-react-native';
 import * as theme from '../../utils/theme';
@@ -56,9 +57,12 @@ const DashboardScreen = () => {
           <Text style={styles.date}>{format(new Date(), 'EEEE, MMM d')}</Text>
           <Text style={styles.greeting}>Hello, {user?.displayName?.split(' ')[0] || 'Member'}!</Text>
         </View>
-        <TouchableOpacity style={styles.profileBtn}>
-           <Bell size={24} color={COLORS.text_dark} />
-        </TouchableOpacity>
+<TouchableOpacity 
+    style={styles.profileBtn}
+    onPress={() => navigation.navigate('Settings')} 
+  >
+     <Settings size={24} color={COLORS.text_dark} />
+  </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>

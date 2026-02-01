@@ -31,13 +31,14 @@ import MealPlannerScreen from '../screens/MealPlanner/MealPlannerScreen';
 import EditInstructionsScreen from '../screens/RecipeBox/EditInstructionsScreen';
 import DishPickerScreen from '../screens/MealPlanner/DishPickerScreen';
 
+
 const Stack = createNativeStackNavigator();
 
 const HubStack = () => {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       {/* Hub & Settings */}
-      <Stack.Screen name="Hub" component={HubScreen} />
+      <Stack.Screen name="Dashboard" component={HubScreen} />
       <Stack.Screen name="Settings" component={SettingsScreen} />
 
       {/* Lists Feature */}
