@@ -15,22 +15,16 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { X, ChevronDown, Trash2 } from 'lucide-react-native';
 import * as theme from '../../utils/theme';
-import firestore from '@react-native-firebase/firestore';
+import firestore from '@react-native-firebase/firestore'; // Direct Firestore Import
 import { useFamily } from '../../hooks/useFamily';
 import { useAuth } from '../../contexts/AuthContext';
-import {
-  addCalendarEvent,
-  updateCalendarEvent,
-  deleteCalendarEvent,
-  useFamilyDocument,
-} from '../../services/firestore';
 import DateTimePickerModal from '../Common/DateTimePickerModal';
 import MemberPickerModal from '../Lists/MemberPickerModal';
-import EventColorPicker from './EventColorPicker'; // 1. IMPORT Color Picker
+import EventColorPicker from './EventColorPicker'; 
 
 const { COLORS, FONT_SIZES, SPACING, RADII } = theme;
 
-// ... (ModalHeader and FormRow components are unchanged) ...
+// --- ModalHeader Component ---
 const ModalHeader = ({ onClose, onSave, loading, isEditMode, onDelete }) => {
   const insets = useSafeAreaInsets();
   return (
@@ -69,6 +63,7 @@ const ModalHeader = ({ onClose, onSave, loading, isEditMode, onDelete }) => {
   );
 };
 
+// --- FormRow Component ---
 const FormRow = ({ label, value, onPress }) => (
   <View style={styles.formRow}>
     <Text style={styles.formLabel}>{label}</Text>
@@ -82,23 +77,23 @@ const FormRow = ({ label, value, onPress }) => (
 const NewEventScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
-  const { eventId } = route.params || {};
+  const { eventId, preSelectedDate } = route.params || {}; // Added preSelectedDate support
   const isEditMode = !!eventId;
 
   const { familyId, membersList } = useFamily();
   const { user } = useAuth();
 
-  const {
-    data: existingEvent,
-    loading: loadingEvent,
-  } = useFamilyDocument(isEditMode ? `calendar/${eventId}` : null);
-
   // --- Form State ---
   const [title, setTitle] = useState('');
-  const [color, setColor] = useState(COLORS.orange); // 2. ADD color state
-  const [startAt, setStartAt] = useState(new Date());
-  // ... (rest of state is unchanged) ...
-  const [endAt, setEndAt] = useState(new Date(Date.now() + 60 * 60 * 1000));
+  const [color, setColor] = useState(COLORS.orange);
+  // Default start date: preSelectedDate or Now
+  const [startAt, setStartAt] = useState(preSelectedDate ? new Date(preSelectedDate) : new Date());
+  // Default end date: 1 hour later
+  const [endAt, setEndAt] = useState(
+      preSelectedDate 
+      ? new Date(new Date(preSelectedDate).getTime() + 60 * 60 * 1000) 
+      : new Date(Date.now() + 60 * 60 * 1000)
+  );
   const [isAllDay, setIsAllDay] = useState(false);
   const [repeat, setRepeat] = useState('One time only');
   const [where, setWhere] = useState('');
@@ -107,32 +102,58 @@ const NewEventScreen = () => {
 
   const [showMore, setShowMore] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [fetching, setFetching] = useState(isEditMode); // Loading state for initial fetch
 
   // --- Modal State ---
   const [isPickerVisible, setPickerVisible] = useState(false);
   const [pickerMode, setPickerMode] = useState('startAt');
   const [isMemberPickerVisible, setMemberPickerVisible] = useState(false);
 
-  // --- Effect to load data in Edit Mode ---
+  // --- 1. FIXED DATA LOADING (Manual Fetch to ensure path accuracy) ---
   useEffect(() => {
-    if (isEditMode && existingEvent) {
-      setTitle(existingEvent.title || '');
-      setColor(existingEvent.color || COLORS.orange); // 3. LOAD color
-      setStartAt(existingEvent.startAt ? existingEvent.startAt.toDate() : new Date());
-      setEndAt(existingEvent.endAt ? existingEvent.endAt.toDate() : new Date());
-      // ... (rest of useEffect is unchanged) ...
-      setIsAllDay(existingEvent.allDay || false);
-      setRepeat(existingEvent.repeat || 'One time only');
-      setWhere(existingEvent.location || '');
-      setDescription(existingEvent.description || '');
-      setAttendees(existingEvent.attendees || []);
-      if (existingEvent.location || existingEvent.description) {
-        setShowMore(true);
-      }
+    if (!isEditMode || !familyId) {
+        setFetching(false);
+        return;
     }
-  }, [isEditMode, existingEvent]);
 
-  // ... (attendeeNames memo is unchanged) ...
+    const fetchEvent = async () => {
+      try {
+        // Explicitly fetch from 'calendar_events'
+        const doc = await firestore()
+            .collection(`families/${familyId}/calendar_events`)
+            .doc(eventId)
+            .get();
+
+        if (doc.exists) {
+            const data = doc.data();
+            setTitle(data.title || '');
+            setColor(data.color || COLORS.orange);
+            setIsAllDay(data.allDay || false);
+            setRepeat(data.repeat || 'One time only');
+            setWhere(data.location || '');
+            setDescription(data.description || '');
+            setAttendees(data.attendees || []);
+            
+            // Handle Dates
+            if (data.startAt) setStartAt(data.startAt.toDate ? data.startAt.toDate() : new Date(data.startAt));
+            if (data.endAt) setEndAt(data.endAt.toDate ? data.endAt.toDate() : new Date(data.endAt));
+
+            if (data.location || data.description) {
+                setShowMore(true);
+            }
+        }
+      } catch (e) {
+        console.error("Error fetching event:", e);
+        Alert.alert("Error", "Could not load event.");
+      } finally {
+        setFetching(false);
+      }
+    };
+
+    fetchEvent();
+  }, [isEditMode, familyId, eventId]);
+
+  // --- Helper: Attendee Names ---
   const attendeeNames = useMemo(() => {
     if (attendees.length === 0) return 'All';
     if (attendees.length === membersList.length) return 'All';
@@ -144,7 +165,6 @@ const NewEventScreen = () => {
   }, [attendees, membersList]);
 
   // --- Handlers ---
-  // ... (showPicker, handleDateSave, handleMemberSave, handleRepeatSave are unchanged) ...
   const showPicker = (mode) => {
     setPickerMode(mode);
     setPickerVisible(true);
@@ -156,6 +176,7 @@ const NewEventScreen = () => {
 
     if (pickerMode === 'startAt') {
       setStartAt(selectedDate);
+      // Auto-adjust end time if needed
       if (endAt < selectedDate) {
         setEndAt(new Date(selectedDate.getTime() + 60 * 60 * 1000));
       }
@@ -173,37 +194,55 @@ const NewEventScreen = () => {
     setRepeat(selectedRepeat);
   };
 
-
+  // --- 2. FIXED SAVE HANDLER (Direct Path) ---
   const handleSave = async () => {
-    if (!title) {
+    if (!title.trim()) {
       Alert.alert('Missing Title', 'Please enter a title for the event.');
       return;
     }
+    if (!familyId) return;
+
     setLoading(true);
     
     const finalAttendees = (attendees.length === 0) 
       ? membersList.map(m => m.id) 
       : attendees;
 
+    // Standardize object keys to match what CalendarScreen expects (startTime/endTime vs startAt/endAt)
+    // We will save BOTH to be safe, or stick to one. 
+    // CalendarScreen logic uses: startTime/endTime
+    // This form uses: startAt/endAt
+    // Let's save standardized keys for the Reader.
     const eventData = {
       title,
-      color: color, // 4. ADD color to save object
+      color: color,
+      // Save as 'startTime'/'endTime' to match CalendarScreen & Dashboard readers
+      startTime: firestore.Timestamp.fromDate(startAt),
+      endTime: firestore.Timestamp.fromDate(endAt),
+      // Keep these for backward compatibility if other screens use them
       startAt: firestore.Timestamp.fromDate(startAt),
       endAt: firestore.Timestamp.fromDate(endAt),
       allDay: isAllDay,
       repeat,
       location: where,
       description,
-      createdBy: existingEvent?.createdBy || user.uid,
+      createdBy: isEditMode ? undefined : user.uid, // Don't overwrite creator on edit
       updatedBy: user.uid,
       attendees: finalAttendees,
+      updatedAt: firestore.FieldValue.serverTimestamp(),
     };
 
+    if (!isEditMode) {
+        eventData.createdAt = firestore.FieldValue.serverTimestamp();
+    }
+
     try {
+      const collectionRef = firestore().collection(`families/${familyId}/calendar_events`);
+      
       if (isEditMode) {
-        await updateCalendarEvent(familyId, eventId, eventData);
+        await collectionRef.doc(eventId).update(eventData);
       } else {
-        await addCalendarEvent(familyId, eventData);
+        await collectionRef.add(eventData);
       }
       navigation.goBack();
     } catch (e) {
@@ -214,7 +253,7 @@ const NewEventScreen = () => {
     }
   };
 
-  // ... (handleDelete and loadingEvent checks are unchanged) ...
+  // --- 3. FIXED DELETE HANDLER (Direct Path) ---
   const handleDelete = () => {
     Alert.alert(
       'Delete Event',
@@ -227,7 +266,10 @@ const NewEventScreen = () => {
           onPress: async () => {
             setLoading(true);
             try {
-              await deleteCalendarEvent(familyId, eventId);
+              await firestore()
+                .collection(`families/${familyId}/calendar_events`)
+                .doc(eventId)
+                .delete();
               navigation.goBack();
             } catch (e) {
               Alert.alert('Error', 'Failed to delete event.');
@@ -239,7 +281,7 @@ const NewEventScreen = () => {
     );
   };
   
-  if (loadingEvent) {
+  if (fetching) {
      return (
       <View style={styles.container}>
         <ModalHeader onClose={() => navigation.goBack()} loading={true} />
@@ -273,7 +315,7 @@ const NewEventScreen = () => {
           />
         </View>
 
-        {/* 5. ADD Color Picker */}
+        {/* Color Picker */}
         <EventColorPicker
           selectedColor={color}
           onSelectColor={setColor}
@@ -281,7 +323,6 @@ const NewEventScreen = () => {
 
         {/* Date/Time Pickers */}
         <FormRow 
-// ... (rest of the form is unchanged) ...
           label="From:" 
           value={startAt.toLocaleString([], {
             year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'
@@ -365,7 +406,7 @@ const NewEventScreen = () => {
         </View>
       )}
 
-      {/* ... (Modals are unchanged) ... */}
+      {/* Pickers */}
       <DateTimePickerModal
         visible={isPickerVisible}
         onClose={() => setPickerVisible(false)}
@@ -382,7 +423,6 @@ const NewEventScreen = () => {
 };
 
 const styles = StyleSheet.create({
-// ... (all styles are unchanged) ...
   container: {
     flex: 1,
     backgroundColor: COLORS.background_light,
@@ -473,10 +513,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: SPACING.lg,
-    paddingHorizontal: SPACING.xs,
-  },
-  attendeesRow: {
-    marginBottom: SPACING.xl,
     paddingHorizontal: SPACING.xs,
   },
   moreButton: {

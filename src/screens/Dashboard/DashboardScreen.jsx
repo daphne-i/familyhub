@@ -4,247 +4,277 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  // 1. REMOVED SafeAreaView from react-native
+  TouchableOpacity,
+  Dimensions,
 } from 'react-native';
-// 2. IMPORT THE HOOK
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import {
-  CalendarDays,
-  CheckSquare,
-  DollarSign,
-  Salad,
-  User,
+import { useNavigation } from '@react-navigation/native';
+import { 
+  Bell, 
+  Calendar as CalendarIcon, 
+  Wallet, 
+  Utensils, 
+  ArrowRight,
+  CheckCircle2,
+  AlertCircle
 } from 'lucide-react-native';
-import { useAuth } from '../../contexts/AuthContext';
 import * as theme from '../../utils/theme';
+import { useAuth } from '../../contexts/AuthContext';
+import { useDashboard } from '../../hooks/useDashboard';
+import { format } from 'date-fns';
 
 const { COLORS, FONT_SIZES, SPACING, RADII } = theme;
 
-// Helper component for the user avatar
-const UserAvatar = () => (
-  <View style={styles.avatarContainer}>
-    <User size={FONT_SIZES.xl} color={COLORS.text} />
-  </View>
+const QuickAction = ({ icon: Icon, label, color, onPress }) => (
+  <TouchableOpacity style={styles.quickAction} onPress={onPress}>
+    <View style={[styles.quickActionIcon, { backgroundColor: color + '20' }]}>
+      <Icon size={24} color={color} />
+    </View>
+    <Text style={styles.quickActionLabel}>{label}</Text>
+  </TouchableOpacity>
 );
 
 const DashboardScreen = () => {
+  const insets = useSafeAreaInsets();
+  const navigation = useNavigation();
   const { user } = useAuth();
-  const insets = useSafeAreaInsets(); // 3. GET THE INSETS
+  
+  // Fetch real data from the hook
+  const { events, todaysMeals, budgetSummary } = useDashboard();
 
-  const today = new Date();
-  const dateString = today.toLocaleDateString(undefined, {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-  });
+  // Logic: Find the next relevant meal (Breakfast -> Lunch -> Dinner -> Snack)
+  const mealOrder = ['breakfast', 'lunch', 'dinner', 'snack'];
+  const nextMeal = todaysMeals && todaysMeals.length > 0 
+    ? todaysMeals.sort((a, b) => mealOrder.indexOf(a.slot) - mealOrder.indexOf(b.slot))[0] 
+    : null;
 
   return (
-    // 4. Use a regular <View> or <ScrollView> as the root
-    <ScrollView
-      style={[styles.container, { backgroundColor: COLORS.background_light }]}
-      contentContainerStyle={[
-        styles.scrollContent,
-        // 5. APPLY PADDINGTOP DYNAMICALLY
-        { paddingTop: insets.top + SPACING.lg },
-      ]}
-      showsVerticalScrollIndicator={false}>
-      {/* === Welcome Header === */}
-      <View style={styles.header}>
-        <UserAvatar />
-        <View style={styles.headerText}>
-          <Text style={styles.headerTitle}>
-            Good morning, {user?.displayName || 'User'}
-          </Text>
-          <Text style={styles.headerSubtitle}>{dateString}</Text>
+    <View style={styles.container}>
+      {/* Header Section */}
+      <View style={[styles.header, { paddingTop: insets.top + SPACING.md }]}>
+        <View>
+          <Text style={styles.date}>{format(new Date(), 'EEEE, MMM d')}</Text>
+          <Text style={styles.greeting}>Hello, {user?.displayName?.split(' ')[0] || 'Member'}!</Text>
         </View>
+        <TouchableOpacity style={styles.profileBtn}>
+           <Bell size={24} color={COLORS.text_dark} />
+        </TouchableOpacity>
       </View>
 
-      {/* === 2-Column Widget Grid === */}
-      <View style={styles.widgetGrid}>
-        {/* Today's Events Widget */}
-        <View style={[styles.widgetCard, styles.halfWidth, styles.blueWidget]}>
-          <View style={styles.widgetHeader}>
-            <CalendarDays size={FONT_SIZES.lg} color={COLORS.primary} />
-            <Text style={[styles.widgetTitle, { color: COLORS.primary }]}>
-              Today's Events
-            </Text>
-          </View>
-          <Text style={styles.widgetCount}>2 entries</Text>
-          <View style={styles.widgetContent}>
-            <Text style={styles.widgetItem}>7:00 – 8:00 Yoga Class</Text>
-            <Text style={styles.widgetItem}>10:00 – 1:30 Standup Meeting</Text>
-          </View>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        
+        {/* Quick Actions Grid */}
+        <View style={styles.quickActionsContainer}>
+          <QuickAction 
+            icon={CalendarIcon} 
+            label="Calendar" 
+            color="#4CAF50" 
+            onPress={() => navigation.navigate('Calendar')} 
+          />
+          <QuickAction 
+            icon={Utensils} 
+            label="Meals" 
+            color="#FF9800" 
+            onPress={() => navigation.navigate('MealPlanner')} 
+          />
+          <QuickAction 
+            icon={Wallet} 
+            label="Budget" 
+            color="#2196F3" 
+            onPress={() => navigation.navigate('Budget')} 
+          />
         </View>
 
-        {/* Pending Tasks Widget */}
-        <View style={[styles.widgetCard, styles.halfWidth, styles.greenWidget]}>
-          <View style={styles.widgetHeader}>
-            <CheckSquare size={FONT_SIZES.lg} color={COLORS.green} />
-            <Text style={[styles.widgetTitle, { color: COLORS.green }]}>
-              Pending Tasks
-            </Text>
-          </View>
-          <Text style={styles.widgetCount}>3 items</Text>
-          <View style={styles.widgetContent}>
-            <Text style={styles.widgetItem}>Pay electricity bill</Text>
-            <Text style={styles.widgetItem}>Wash clothes</Text>
-            <Text style={styles.widgetItem}>Buy groceries</Text>
-          </View>
+        {/* Section: Today's Schedule */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Today's Schedule</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('Calendar')}>
+            <Text style={styles.seeAll}>See All</Text>
+          </TouchableOpacity>
         </View>
-      </View>
 
-      {/* === Full-Width Widgets === */}
-      {/* Budget Snapshot Widget */}
-      <View style={[styles.widgetCard, styles.purpleWidget]}>
-        <View style={styles.widgetHeader}>
-          <DollarSign size={FONT_SIZES.lg} color={COLORS.purple} />
-          <Text style={[styles.widgetTitle, { color: COLORS.purple }]}>
-            Budget Snapshot
-          </Text>
-        </View>
-        <Text style={styles.widgetCount}>1.250 / 3.3.000 spent</Text>
-        <View style={styles.progressBarContainer}>
-          <View style={styles.progressBar} />
-        </View>
-      </View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalScroll}>
+          {events.length > 0 ? (
+            events.map(event => (
+              <TouchableOpacity 
+                key={event.id} 
+                style={styles.eventCard}
+                onPress={() => navigation.navigate('Calendar')}
+              >
+                <View style={[styles.eventBar, { backgroundColor: event.color || COLORS.primary }]} />
+                <View style={styles.eventContent}>
+                  <Text style={styles.eventTime}>
+                    {format(event.startTime, 'h:mm a')}
+                  </Text>
+                  <Text style={styles.eventTitle} numberOfLines={2}>{event.title}</Text>
+                </View>
+              </TouchableOpacity>
+            ))
+          ) : (
+            <View style={styles.emptyStateCard}>
+              <CheckCircle2 size={24} color={COLORS.text_light} />
+              <Text style={styles.emptyStateText}>No events today</Text>
+            </View>
+          )}
+        </ScrollView>
 
-      {/* Today's Meal Plan Widget */}
-      <View style={[styles.widgetCard, styles.orangeWidget]}>
-        <View style={styles.widgetHeader}>
-          <Salad size={FONT_SIZES.lg} color={COLORS.orange} />
-          <Text style={[styles.widgetTitle, { color: COLORS.orange }]}>
-            Today's Meal Plan
-          </Text>
-        </View>
-        <View style={styles.mealContent}>
-          <Text style={styles.widgetCount}>No meal planned</Text>
-          <View style={styles.mealImagePlaceholder}>
-            <Salad size={FONT_SIZES.xxl} color={COLORS.orange} />
+        {/* Section: Up Next to Eat */}
+        <Text style={[styles.sectionTitle, { marginTop: SPACING.lg }]}>Up Next to Eat</Text>
+        <TouchableOpacity 
+          style={styles.dinnerCard}
+          onPress={() => navigation.navigate('MealPlanner')}
+        >
+          <View style={styles.dinnerContent}>
+             <View style={styles.dinnerIcon}>
+                <Utensils size={20} color={COLORS.white} />
+             </View>
+             <View>
+               <Text style={styles.dinnerLabel}>
+                 {nextMeal ? (nextMeal.slot.charAt(0).toUpperCase() + nextMeal.slot.slice(1)) : "Meal Plan"}
+               </Text>
+               <Text style={styles.dinnerTitle}>
+                 {nextMeal ? nextMeal.title : "Nothing planned for today"}
+               </Text>
+             </View>
           </View>
-        </View>
-      </View>
-    </ScrollView>
+          <ArrowRight size={20} color={COLORS.text_dark} />
+        </TouchableOpacity>
+
+        {/* Section: Monthly Budget */}
+        <Text style={[styles.sectionTitle, { marginTop: SPACING.lg }]}>Monthly Budget</Text>
+        <TouchableOpacity 
+          style={styles.budgetCard}
+          onPress={() => navigation.navigate('Budget')}
+        >
+          {budgetSummary ? (
+            <View style={styles.budgetRow}>
+              <View>
+                 <Text style={styles.budgetLabel}>Remaining</Text>
+                 <Text style={[
+                   styles.budgetAmount, 
+                   { color: budgetSummary.remaining < 0 ? COLORS.text_danger : COLORS.primary }
+                 ]}>
+                   ₹{budgetSummary.remaining.toFixed(2)}
+                 </Text>
+              </View>
+              <View style={{ alignItems: 'flex-end' }}>
+                 <Text style={styles.budgetLabel}>Limit</Text>
+                 <Text style={styles.budgetLimit}>₹{budgetSummary.limit}</Text>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.noBudgetState}>
+               <AlertCircle size={24} color={COLORS.text_light} />
+               <Text style={styles.emptyStateText}>No budget set for this month</Text>
+            </View>
+          )}
+        </TouchableOpacity>
+
+        <View style={{ height: 100 }} />
+      </ScrollView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
-  // REMOVED safeArea style
-  container: {
-    flex: 1,
-  },
-  scrollContent: {
-    // We removed the static padding from here
-    paddingHorizontal: SPACING.lg,
-    paddingBottom: SPACING.lg,
-  },
-  // --- Header ---
+  container: { flex: 1, backgroundColor: COLORS.background_white },
   header: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: SPACING.xl,
-  },
-  avatarContainer: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    paddingHorizontal: SPACING.lg,
+    paddingBottom: SPACING.lg,
     backgroundColor: COLORS.white,
+  },
+  date: { fontSize: FONT_SIZES.sm, color: COLORS.text_light, textTransform: 'uppercase', letterSpacing: 1 },
+  greeting: { fontSize: 24, fontWeight: 'bold', color: COLORS.text_dark },
+  profileBtn: { padding: SPACING.sm, backgroundColor: COLORS.background_light, borderRadius: 20 },
+  
+  content: { padding: SPACING.lg },
+  
+  // Quick Actions
+  quickActionsContainer: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: SPACING.xl },
+  quickAction: { alignItems: 'center', width: '30%' },
+  quickActionIcon: { width: 60, height: 60, borderRadius: 20, justifyContent: 'center', alignItems: 'center', marginBottom: 8 },
+  quickActionLabel: { fontSize: FONT_SIZES.sm, fontWeight: '600', color: COLORS.text_dark },
+  
+  // Section Headers
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: SPACING.md },
+  sectionTitle: { fontSize: FONT_SIZES.lg, fontWeight: 'bold', color: COLORS.text_dark },
+  seeAll: { color: COLORS.primary, fontSize: FONT_SIZES.sm, fontWeight: '600' },
+
+  // Events
+  horizontalScroll: { overflow: 'visible' },
+  eventCard: {
+    width: 140,
+    height: 100,
+    backgroundColor: COLORS.white,
+    borderRadius: RADII.md,
+    marginRight: SPACING.md,
+    flexDirection: 'row',
+    overflow: 'hidden',
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  eventBar: { width: 6, height: '100%' },
+  eventContent: { padding: SPACING.sm, flex: 1, justifyContent: 'center' },
+  eventTime: { fontSize: FONT_SIZES.xs, color: COLORS.text_light, marginBottom: 4 },
+  eventTitle: { fontSize: FONT_SIZES.sm, fontWeight: 'bold', color: COLORS.text_dark },
+  emptyStateCard: {
+    width: 140,
+    height: 100,
+    backgroundColor: COLORS.background_light,
+    borderRadius: RADII.md,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: SPACING.md,
+  },
+  emptyStateText: { color: COLORS.text_light, fontSize: FONT_SIZES.sm, marginTop: 4 },
+
+  // Meal Card
+  dinnerCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: RADII.lg,
+    padding: SPACING.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: SPACING.sm,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  dinnerContent: { flexDirection: 'row', alignItems: 'center' },
+  dinnerIcon: { 
+    width: 40, height: 40, 
+    borderRadius: 20, 
+    backgroundColor: COLORS.orange, 
+    justifyContent: 'center', 
+    alignItems: 'center',
+    marginRight: SPACING.md
+  },
+  dinnerLabel: { fontSize: FONT_SIZES.xs, color: COLORS.text_light, textTransform: 'capitalize' },
+  dinnerTitle: { fontSize: FONT_SIZES.md, fontWeight: 'bold', color: COLORS.text_dark },
+
+  // Budget Card
+  budgetCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: RADII.lg,
+    padding: SPACING.lg,
+    marginTop: SPACING.sm,
     borderWidth: 1,
     borderColor: COLORS.border,
   },
-  headerText: {
-    flex: 1,
-  },
-  headerTitle: {
-    fontSize: FONT_SIZES.xl,
-    fontWeight: 'bold',
-    color: COLORS.text_dark,
-  },
-  headerSubtitle: {
-    fontSize: FONT_SIZES.md,
-    color: COLORS.text_light,
-  },
-  // --- Widget Grid ---
-  widgetGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: SPACING.lg,
-  },
-  halfWidth: {
-    width: '48%',
-  },
-  // --- Widget Card (Base) ---
-  widgetCard: {
-    borderRadius: RADII.lg,
-    padding: SPACING.lg,
-    backgroundColor: COLORS.white,
-    marginBottom: SPACING.lg,
-  },
-  widgetHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: SPACING.sm,
-  },
-  widgetTitle: {
-    fontSize: FONT_SIZES.md,
-    fontWeight: 'bold',
-    marginLeft: SPACING.sm,
-  },
-  widgetCount: {
-    fontSize: FONT_SIZES.base,
-    color: COLORS.text,
-    marginBottom: SPACING.md,
-    fontWeight: '600',
-  },
-  widgetContent: {},
-  widgetItem: {
-    fontSize: FONT_SIZES.base,
-    color: COLORS.text_light,
-    marginBottom: SPACING.xs,
-  },
-  // --- Specific Widget Colors ---
-  blueWidget: {
-    backgroundColor: COLORS.primary_light,
-  },
-  greenWidget: {
-    backgroundColor: COLORS.green_light,
-  },
-  purpleWidget: {
-    backgroundColor: COLORS.purple_light,
-  },
-  orangeWidget: {
-    backgroundColor: COLORS.orange_light,
-  },
-  // --- Budget Widget ---
-  progressBarContainer: {
-    width: '100%',
-    height: 8,
-    backgroundColor: 'rgba(0,0,0,0.05)',
-    borderRadius: 4,
-    marginTop: SPACING.sm,
-  },
-  progressBar: {
-    width: '40%', // Dummy value
-    height: '100%',
-    backgroundColor: COLORS.purple,
-    borderRadius: 4,
-  },
-  // --- Meal Widget ---
-  mealContent: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  mealImagePlaceholder: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: 'rgba(255,255,255,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+  budgetRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  budgetLabel: { fontSize: FONT_SIZES.sm, color: COLORS.text_light, marginBottom: 4 },
+  budgetAmount: { fontSize: 24, fontWeight: 'bold' },
+  budgetLimit: { fontSize: FONT_SIZES.lg, color: COLORS.text_dark, fontWeight: '500' },
+  noBudgetState: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, padding: SPACING.sm }
 });
 
 export default DashboardScreen;

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -16,27 +16,30 @@ import { CalendarList } from 'react-native-calendars';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Home, Plus, CheckSquare, Square } from 'lucide-react-native';
 import * as theme from '../../utils/theme';
+import firestore from '@react-native-firebase/firestore'; // Import Firestore directly
 import { 
-  useFamilyCollection, 
-  useFamilyCollectionGroup,
-  updateListItem, // 1. Import updateListItem
+  updateListItem, 
 } from '../../services/firestore';
 import { expandRecurringEvents } from '../../utils/calendarHelpers';
-import { addYears, subMonths, startOfDay } from 'date-fns';
+import { addYears, subMonths, startOfDay, format } from 'date-fns';
 import MemberAvatar from '../Common/MemberAvatar';
-import { useFamily } from '../../hooks/useFamily'; // 2. Import useFamily
+import { useFamily } from '../../hooks/useFamily';
 
 const { COLORS, FONT_SIZES, SPACING, RADII } = theme;
 
 // --- Components ---
 
 const EventItem = ({ event, onPress, onLongPress }) => {
+  // Safety check for timestamps
+  const start = event.startAt?.toDate ? event.startAt.toDate() : new Date(event.startAt || Date.now());
+  const end = event.endAt?.toDate ? event.endAt.toDate() : new Date(event.endAt || Date.now());
+
   const timeString = event.allDay
     ? 'All day'
-    : `${event.startAt.toDate().toLocaleTimeString(undefined, {
+    : `${start.toLocaleTimeString(undefined, {
         hour: 'numeric',
         minute: '2-digit',
-      })} - ${event.endAt.toDate().toLocaleTimeString(undefined, {
+      })} - ${end.toLocaleTimeString(undefined, {
         hour: 'numeric',
         minute: '2-digit',
       })}`;
@@ -58,9 +61,8 @@ const EventItem = ({ event, onPress, onLongPress }) => {
   );
 };
 
-// --- UPDATED Task Item ---
 const TaskItem = ({ item, onPress, onToggleComplete }) => {
-  const itemDueDate = item.dueDate ? item.dueDate.toDate() : null;
+  const itemDueDate = item.dueDate?.toDate ? item.dueDate.toDate() : (item.dueDate ? new Date(item.dueDate) : null);
   const timeString = itemDueDate
     ? itemDueDate.toLocaleTimeString(undefined, {
         hour: 'numeric',
@@ -94,14 +96,19 @@ const TaskItem = ({ item, onPress, onToggleComplete }) => {
   );
 };
 
-
 // --- Helper Functions ---
 const toDateString = (date) => {
-  return date.toISOString().split('T')[0];
+  if (!date) return '';
+  // Ensure we have a valid Date object
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return '';
+  return d.toISOString().split('T')[0];
 };
+
 const generateDateRange = (startDate) => {
   const dates = [];
   const currentDate = new Date(startDate);
+  // Avoid timezone issues by setting to noon
   currentDate.setHours(12, 0, 0, 0);
   for (let i = 0; i < 30; i++) {
     dates.push(new Date(currentDate));
@@ -114,28 +121,80 @@ const generateDateRange = (startDate) => {
 const CalendarScreen = () => {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const { familyId } = useFamily(); // 3. Get familyId
+  const { familyId } = useFamily();
   
-  // 1. Fetch Calendar Events
-  const { data: events, loading: loadingEvents } = useFamilyCollection('calendar');
+  // Local State for Data
+  const [events, setEvents] = useState([]);
+  const [tasks, setTasks] = useState([]);
+  const [lists, setLists] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  // --- 1. DIRECT DATA FETCHING (The Fix) ---
+  useEffect(() => {
+    if (!familyId) return;
+
+    setLoading(true);
+
+    // A. Fetch Events (Directly from family collection)
+    const eventsUnsub = firestore()
+      .collection(`families/${familyId}/calendar_events`)
+      .onSnapshot(snap => {
+        const loadedEvents = [];
+        snap.forEach(doc => {
+            // Include ID and safe data
+            loadedEvents.push({ id: doc.id, ...doc.data(), originalId: doc.id });
+        });
+        setEvents(loadedEvents);
+      }, err => console.log("Calendar Events Error:", err));
+
+    // B. Fetch Lists (For names)
+    const listsUnsub = firestore()
+      .collection(`families/${familyId}/lists`)
+      .onSnapshot(snap => {
+        const loadedLists = [];
+        snap.forEach(doc => loadedLists.push({ id: doc.id, ...doc.data() }));
+        setLists(loadedLists);
+      }, err => console.log("Lists Error:", err));
+
+    // C. Fetch Tasks (Safely)
+    // We use a try/catch block around the listener setup in case permissions fail
+    let tasksUnsub = () => {};
+    try {
+        tasksUnsub = firestore()
+          .collectionGroup('items')
+          .where('familyId', '==', familyId) // Ensure your items have familyId
+          // .where('dueDate', '>', ...) // Removed complex filters to prevent index errors
+          .onSnapshot(snap => {
+            const loadedTasks = [];
+            snap.forEach(doc => {
+                const data = doc.data();
+                if (data.dueDate) { // Only tasks with dates
+                    loadedTasks.push({ id: doc.id, ...data });
+                }
+            });
+            setTasks(loadedTasks);
+          }, err => {
+              console.log("Task Fetch Error (likely missing index):", err.message);
+              // Don't crash, just show no tasks
+          });
+    } catch (e) {
+        console.log("Task Query Setup Failed:", e);
+    }
+
+    setLoading(false);
+
+    return () => {
+        eventsUnsub();
+        listsUnsub();
+        tasksUnsub();
+    };
+  }, [familyId]);
   
-  // 2. Fetch ALL List Items with a due date
-  const { 
-    data: tasks, 
-    loading: loadingTasks 
-  } = useFamilyCollectionGroup(
-    'items', 
-    startOfDay(subMonths(new Date(), 3))
-  );
-  
-  // 4. Fetch Lists to get their names
-  const { data: lists } = useFamilyCollection('lists');
+  // Maps for List Info
   const listNameMap = useMemo(() => {
-    if (!lists) return new Map();
     return new Map(lists.map(list => [list.id, list.name]));
   }, [lists]);
   const listTypeMap = useMemo(() => {
-    if (!lists) return new Map();
     return new Map(lists.map(list => [list.id, list.type]));
   }, [lists]);
 
@@ -152,16 +211,17 @@ const CalendarScreen = () => {
     return generateDateRange(selectedDate);
   }, [selectedDate]);
 
-  // 5. --- COMBINE Events and Tasks ---
+  // --- COMBINE Events and Tasks ---
   const { markedDates, groupedItems } = useMemo(() => {
     const marks = {};
     const groups = {};
     
     // --- Process Events ---
-    if (events) {
+    if (events.length > 0) {
       const now = new Date();
       const viewStartDate = subMonths(now, 3);
       const viewEndDate = addYears(now, 10);
+      
       const allOccurrences = expandRecurringEvents(
         events,
         viewStartDate,
@@ -170,6 +230,8 @@ const CalendarScreen = () => {
       
       allOccurrences.forEach((occurrence) => {
         const dateStr = toDateString(occurrence.occurrenceDate);
+        if (!dateStr) return; // Skip invalid dates
+
         const color = occurrence.color || COLORS.orange;
         
         if (!groups[dateStr]) groups[dateStr] = [];
@@ -188,11 +250,14 @@ const CalendarScreen = () => {
     }
     
     // --- Process Tasks ---
-    if (tasks) {
+    if (tasks.length > 0) {
       tasks.forEach((task) => {
         if (!task.dueDate) return;
-        const dateStr = toDateString(task.dueDate.toDate());
-        const color = COLORS.green; // 6. SET TASK COLOR TO GREEN
+        const taskDate = task.dueDate.toDate ? task.dueDate.toDate() : new Date(task.dueDate);
+        const dateStr = toDateString(taskDate);
+        if (!dateStr) return;
+
+        const color = COLORS.green;
         
         if (!groups[dateStr]) groups[dateStr] = [];
         groups[dateStr].push({ type: 'task', data: task });
@@ -225,13 +290,12 @@ const CalendarScreen = () => {
   }, [events, tasks, selectedDate]);
   
   const markingType = 'multi-dot';
-  const loading = loadingEvents || loadingTasks;
 
   // --- Handlers ---
   const handleViewEvent = (event) => {
     Alert.alert(
       event.title,
-      `${event.description}\n\nLocation: ${event.location || 'Not set'}`
+      `${event.description || ''}\n\nLocation: ${event.location || 'Not set'}`
     );
   };
 
@@ -239,7 +303,6 @@ const CalendarScreen = () => {
     navigation.navigate('NewEvent', { eventId: event.originalId });
   };
   
-  // 7. --- UPDATE handleEditTask ---
   const handleEditTask = (task) => {
     if (!task.listId) {
       Alert.alert('Error', 'Cannot find the list for this task.');
@@ -371,7 +434,7 @@ const CalendarScreen = () => {
                     if (item.type === 'event') {
                       return (
                         <EventItem
-                          key={item.data.id}
+                          key={item.data.id + Math.random()} // Ensure unique keys
                           event={item.data}
                           onPress={() => handleViewEvent(item.data)}
                           onLongPress={() => handleEditEvent(item.data)}
@@ -473,9 +536,8 @@ const styles = StyleSheet.create({
   eventCard: {
     backgroundColor: COLORS.orange,
   },
-  // --- 8. TASK CARD STYLE UPDATES ---
   taskCard: {
-    backgroundColor: COLORS.green_light, // Changed to green_light
+    backgroundColor: COLORS.green_light,
   },
   itemTimeContainer: {
     padding: SPACING.md,
@@ -486,7 +548,7 @@ const styles = StyleSheet.create({
     minWidth: 75,
   },
   taskTimeContainer: {
-    borderRightColor: 'rgba(16, 185, 129, 0.3)', // Green-based border
+    borderRightColor: 'rgba(16, 185, 129, 0.3)', 
   },
   itemTime: {
     color: COLORS.white,
@@ -494,7 +556,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   taskTime: {
-    color: COLORS.green, // Changed to green
+    color: COLORS.green,
     fontSize: FONT_SIZES.sm,
     fontWeight: '600',
   },
@@ -513,7 +575,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   taskCheckbox: {
-    paddingRight: SPACING.sm, // Add padding to make checkbox easier to tap
+    paddingRight: SPACING.sm,
   },
   taskTitle: {
     color: COLORS.text_dark,
@@ -525,7 +587,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: SPACING.sm,
-    paddingLeft: SPACING.md, // Align with checkbox
+    paddingLeft: SPACING.md, 
   },
   fab: {
     position: 'absolute',

@@ -24,10 +24,11 @@ import {
   User,
   Banknote,
   X,
-  ChevronDown // Import ChevronDown for the toggle hint
+  ChevronDown
 } from 'lucide-react-native';
+import firestore from '@react-native-firebase/firestore'; // 1. IMPORT FIRESTORE
 import * as theme from '../../utils/theme';
-import { useFamilyCollection, useBudget, updateBudgetLimit } from '../../services/firestore';
+import { useFamilyCollection } from '../../services/firestore';
 import { useFamily } from '../../hooks/useFamily';
 import MemberAvatar from '../Common/MemberAvatar';
 import MonthYearPicker from '../Common/MonthYearPicker';
@@ -43,7 +44,7 @@ const BudgetHeader = ({ onPressMore }) => {
     <View style={[styles.header, { paddingTop: insets.top }]}>
       <TouchableOpacity
         style={styles.headerButton}
-        onPress={() => navigation.navigate('Hub')}>
+        onPress={() => navigation.navigate('Dashboard')}>
         <Home size={FONT_SIZES.xl} color={COLORS.text_dark} /> 
       </TouchableOpacity>
       <TouchableOpacity style={styles.headerButton} onPress={onPressMore}>
@@ -53,7 +54,6 @@ const BudgetHeader = ({ onPressMore }) => {
   );
 };
 
-// Updated SummaryCard to toggle between Expense and Income
 const SummaryCard = ({ totalSpent, totalIncome, budgetLimit, loading, mode, onToggle }) => {
   if (loading) {
     return (
@@ -65,17 +65,15 @@ const SummaryCard = ({ totalSpent, totalIncome, budgetLimit, loading, mode, onTo
 
   const isExpense = mode === 'expense';
   
-  // Values to display
   const amount = isExpense ? totalSpent : totalIncome;
   const label = isExpense ? 'Monthly Expenses' : 'Monthly Income';
   const subLabel = isExpense ? 'Expenses this month' : 'Income this month';
   
-  // Budget logic (only relevant for expenses)
-  const limit = budgetLimit || 20000; 
+  const limit = budgetLimit || 0; 
   const left = limit - totalSpent;
-  const percent = Math.min(Math.max((totalSpent / limit) * 100, 0), 100);
+  // Prevent division by zero and negative percentages
+  const percent = limit > 0 ? Math.min(Math.max((totalSpent / limit) * 100, 0), 100) : 0;
 
-  // Dynamic background color: Blue for Expense (Default), Green for Income
   const cardBackgroundColor = isExpense ? COLORS.primary : COLORS.green;
 
   return (
@@ -92,11 +90,12 @@ const SummaryCard = ({ totalSpent, totalIncome, budgetLimit, loading, mode, onTo
       <Text style={styles.summaryBalance}>₹{amount.toFixed(2)}</Text>
       <Text style={styles.summarySublabel}>{subLabel}</Text>
       
-      {/* Only show Progress Bar for Expenses */}
       {isExpense ? (
         <>
           <View style={styles.progressContainer}>
-            <Text style={styles.progressText}>Budget: ₹{left.toFixed(2)} left</Text>
+            <Text style={styles.progressText}>
+               {limit > 0 ? `Budget: ₹${left.toFixed(2)} left` : 'No Budget Set'}
+            </Text>
             <Text style={styles.progressText}>{percent.toFixed(0)}%</Text>
           </View>
           <View style={styles.progressBar}>
@@ -104,30 +103,28 @@ const SummaryCard = ({ totalSpent, totalIncome, budgetLimit, loading, mode, onTo
           </View>
         </>
       ) : (
-        // Placeholder or specific Income info could go here
         <View style={{ marginTop: SPACING.xl, height: 20 }} />
       )}
     </TouchableOpacity>
   );
 };
 
-// ... [EditBudgetModal, MonthSelector, ViewToggle remain UNCHANGED] ...
 const EditBudgetModal = ({ visible, onClose, onSave, currentLimit, monthLabel }) => {
   const [limit, setLimit] = useState('');
 
   useEffect(() => {
     if (visible) {
-      setLimit(currentLimit ? currentLimit.toString() : '20000');
+      setLimit(currentLimit ? currentLimit.toString() : '');
     }
   }, [visible, currentLimit]);
 
   const handleSave = () => {
     const val = parseFloat(limit);
-    if (!isNaN(val) && val > 0) {
+    if (!isNaN(val) && val >= 0) {
       onSave(val);
       onClose();
     } else {
-      Alert.alert("Invalid Amount", "Please enter a valid positive number.");
+      Alert.alert("Invalid Amount", "Please enter a valid number.");
     }
   };
 
@@ -227,16 +224,45 @@ const BudgetScreen = () => {
   const [isEditModalVisible, setEditModalVisible] = useState(false);
   const [isMonthPickerVisible, setMonthPickerVisible] = useState(false);
   
-  // 1. New State for Summary Mode ('expense' or 'income')
   const [summaryMode, setSummaryMode] = useState('expense');
 
+  // Logic: Generate ID like "2026-02"
   const monthId = useMemo(() => {
     const year = selectedDate.getFullYear();
     const month = (selectedDate.getMonth() + 1).toString().padStart(2, '0');
     return `${year}-${month}`;
   }, [selectedDate]);
 
-  const { data: budgetData, loading: loadingBudget } = useBudget(monthId);
+  // --- 2. FIXED: Fetch Budget Data DIRECTLY from correct path ---
+  const [budgetData, setBudgetData] = useState(null);
+  const [loadingBudget, setLoadingBudget] = useState(true);
+
+  useEffect(() => {
+    if (!familyId) return;
+    setLoadingBudget(true);
+
+    const unsub = firestore()
+      .collection(`families/${familyId}/budgets`)
+      .doc(monthId)
+      .onSnapshot(doc => {
+        if (doc.exists) {
+          // Map 'monthlyLimit' (DB field) to 'totalLimit' (UI prop)
+          const data = doc.data();
+          setBudgetData({ ...data, totalLimit: data.monthlyLimit });
+        } else {
+          setBudgetData({ totalLimit: 0, totalSpent: 0 });
+        }
+        setLoadingBudget(false);
+      }, err => {
+        console.error("Budget fetch error:", err);
+        setLoadingBudget(false);
+      });
+
+    return () => unsub();
+  }, [familyId, monthId]);
+
+
+  // Transactions (Fetching all for now, filtering client side)
   const { data: allTransactions, loading: loadingTx } = useFamilyCollection('transactions');
 
   const filteredTransactions = useMemo(() => {
@@ -255,7 +281,6 @@ const BudgetScreen = () => {
     });
   }, [allTransactions, selectedDate]);
 
-  // Calculate Total Spent
   const calculatedSpent = useMemo(() => {
       return filteredTransactions.reduce((total, tx) => {
           if (tx.type === 'Expense') {
@@ -265,7 +290,6 @@ const BudgetScreen = () => {
       }, 0);
   }, [filteredTransactions]);
 
-  // 2. Calculate Total Income
   const calculatedIncome = useMemo(() => {
       return filteredTransactions.reduce((total, tx) => {
           if (tx.type === 'Income') {
@@ -275,8 +299,25 @@ const BudgetScreen = () => {
       }, 0);
   }, [filteredTransactions]);
 
+  // --- 3. AUTO-SYNC: Update Firestore 'totalSpent' so Dashboard sees it ---
+  useEffect(() => {
+    if (!familyId || loadingBudget) return;
+    
+    // Only update if database value differs from calculated value
+    // This ensures Dashboard gets the right number.
+    const dbSpent = budgetData?.totalSpent || 0;
+    
+    // Small check to avoid infinite loops or unnecessary writes
+    if (Math.abs(dbSpent - calculatedSpent) > 0.01) {
+       firestore()
+         .collection(`families/${familyId}/budgets`)
+         .doc(monthId)
+         .set({ totalSpent: calculatedSpent }, { merge: true })
+         .catch(err => console.log("Failed to sync totalSpent", err));
+    }
+  }, [calculatedSpent, familyId, monthId, budgetData, loadingBudget]);
+
   // --- Grouping Logic ---
-  
   const groupedByDate = useMemo(() => {
     const groups = {};
     filteredTransactions.forEach(tx => {
@@ -286,9 +327,8 @@ const BudgetScreen = () => {
         groups[dateStr] = { day: dateStr, total: 0, items: [] };
       }
       groups[dateStr].items.push(tx);
-      // Only subtract expenses from daily total logic for visual clarity
       if (tx.type === 'Expense') groups[dateStr].total -= tx.amount;
-      else groups[dateStr].total += tx.amount; // Add income
+      else groups[dateStr].total += tx.amount;
     });
     return Object.values(groups);
   }, [filteredTransactions]);
@@ -296,8 +336,6 @@ const BudgetScreen = () => {
   const groupedByCategory = useMemo(() => {
      const groups = {};
      let totalForView = 0;
-     
-     // Filter based on the current Summary Mode (Expense vs Income)
      const relevantTransactions = filteredTransactions.filter(tx => 
        summaryMode === 'expense' ? tx.type === 'Expense' : tx.type === 'Income'
      );
@@ -319,12 +357,11 @@ const BudgetScreen = () => {
        ...g,
        percent: totalForView > 0 ? `${((g.amount / totalForView) * 100).toFixed(0)}%` : '0%'
      })).sort((a, b) => b.amount - a.amount);
-  }, [filteredTransactions, summaryMode]); // Re-calculate when mode changes
+  }, [filteredTransactions, summaryMode]);
 
   const groupedByMember = useMemo(() => {
     const groups = {};
     let totalForView = 0;
-    
     const relevantTransactions = filteredTransactions.filter(tx => 
        summaryMode === 'expense' ? tx.type === 'Expense' : tx.type === 'Income'
     );
@@ -346,7 +383,6 @@ const BudgetScreen = () => {
 
   const groupedByAccount = useMemo(() => {
     const groups = {};
-    // Account view usually shows everything, but let's respect the mode for consistency
     const relevantTransactions = filteredTransactions.filter(tx => 
        summaryMode === 'expense' ? tx.type === 'Expense' : tx.type === 'Income'
     );
@@ -360,7 +396,6 @@ const BudgetScreen = () => {
     });
     return Object.values(groups).sort((a, b) => b.amount - a.amount);
   }, [filteredTransactions, summaryMode]);
-
 
   const handlePrevMonth = () => {
     setSelectedDate(prev => {
@@ -378,9 +413,14 @@ const BudgetScreen = () => {
     });
   };
 
+  // --- 4. FIXED: Save Limit DIRECTLY to correct path ---
   const handleSaveLimit = async (newLimit) => {
     try {
-        await updateBudgetLimit(familyId, monthId, newLimit);
+        await firestore()
+            .collection(`families/${familyId}/budgets`)
+            .doc(monthId)
+            .set({ monthlyLimit: newLimit }, { merge: true });
+            
     } catch (e) {
         Alert.alert("Error", "Failed to update budget limit");
     }
@@ -391,7 +431,6 @@ const BudgetScreen = () => {
   };
 
   // --- RENDER FUNCTIONS ---
-
   const renderList = () => (
     <FlatList
       data={groupedByDate}
@@ -503,13 +542,13 @@ const BudgetScreen = () => {
        <View style={styles.txRow}>
           <View style={styles.txIconContainer}>
            <Text style={styles.txIcon}>{item.icon}</Text>
-         </View>
-         <View style={styles.txRowCenter}>
-           <Text style={styles.txTitle}>{item.name}</Text>
-         </View>
-         <Text style={[styles.txAmount, summaryMode === 'expense' ? styles.txExpense : styles.txIncome]}>
+          </View>
+          <View style={styles.txRowCenter}>
+            <Text style={styles.txTitle}>{item.name}</Text>
+          </View>
+          <Text style={[styles.txAmount, summaryMode === 'expense' ? styles.txExpense : styles.txIncome]}>
              ₹{item.amount.toFixed(2)}
-         </Text>
+          </Text>
        </View>
      )}
    />
@@ -528,7 +567,6 @@ const BudgetScreen = () => {
     <View style={styles.container}>
       <BudgetHeader onPressMore={() => setEditModalVisible(true)} />
       
-      {/* 3. Pass new props to SummaryCard */}
       <SummaryCard 
         totalSpent={calculatedSpent} 
         totalIncome={calculatedIncome}
@@ -595,7 +633,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   summaryCard: {
-    // backgroundColor is now dynamic
     padding: SPACING.lg,
   },
   summaryTitleRow: {
