@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,7 +7,8 @@ import {
   ScrollView,
   Alert,
   Share,
-  Image
+  Image,
+  ActivityIndicator
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -18,9 +19,12 @@ import {
   User, 
   Share2,
   Info,
-  Shield
+  Shield,
+  Camera
 } from 'lucide-react-native';
 import auth from '@react-native-firebase/auth';
+import storage from '@react-native-firebase/storage';
+import { launchImageLibrary } from 'react-native-image-picker';
 import * as theme from '../../utils/theme';
 import { useFamily } from '../../hooks/useFamily';
 import { useAuth } from '../../contexts/AuthContext';
@@ -31,7 +35,7 @@ const SettingItem = ({ icon: Icon, label, value, onPress, isDestructive, showChe
   <TouchableOpacity 
     style={styles.itemContainer} 
     onPress={onPress}
-    activeOpacity={0.7}
+    activeOpacity={onPress ? 0.7 : 1}
   >
     <View style={styles.itemLeft}>
       <View style={[styles.iconBox, isDestructive && styles.destructiveIconBox]}>
@@ -43,7 +47,7 @@ const SettingItem = ({ icon: Icon, label, value, onPress, isDestructive, showChe
     </View>
     <View style={styles.itemRight}>
       {value && <Text style={styles.itemValue}>{value}</Text>}
-      {showChevron && <ChevronRight size={18} color={COLORS.text_light} />}
+      {showChevron && onPress && <ChevronRight size={18} color={COLORS.text_light} />}
     </View>
   </TouchableOpacity>
 );
@@ -55,8 +59,88 @@ const SectionHeader = ({ title }) => (
 const SettingsScreen = () => {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
-  const { familyId, familyName } = useFamily();
+  const { familyDoc } = useFamily();
   const { user } = useAuth();
+  
+  const [uploadingImage, setUploadingImage] = useState(false);
+  
+  // FIX: Add local state to force UI updates immediately
+  const [localPhoto, setLocalPhoto] = useState(user?.photoURL);
+
+  // Sync local photo if user object changes from outside
+  useEffect(() => {
+    setLocalPhoto(user?.photoURL);
+  }, [user?.photoURL]);
+
+  // --- Avatar Menu Logic ---
+  const handleAvatarPress = () => {
+    if (localPhoto) {
+      Alert.alert(
+        "Profile Photo",
+        "What would you like to do?",
+        [
+          { text: "Change Photo", onPress: handleUpdatePhoto },
+          { text: "Cancel", style: "cancel" },
+          { text: "Remove Photo", onPress: handleDeletePhoto, style: "destructive" }
+        ]
+      );
+    } else {
+      handleUpdatePhoto();
+    }
+  };
+
+  const handleUpdatePhoto = async () => {
+    try {
+      const result = await launchImageLibrary({ 
+        mediaType: 'photo', 
+        selectionLimit: 1,
+        quality: 0.5 
+      });
+
+      if (result.assets && result.assets.length > 0) {
+        setUploadingImage(true);
+        const asset = result.assets[0];
+        
+        const reference = storage().ref(`profile_photos/${user.uid}.jpg`);
+        await reference.putFile(asset.uri);
+        const url = await reference.getDownloadURL();
+        
+        await auth().currentUser.updateProfile({ photoURL: url });
+        setLocalPhoto(url); // Instantly show new photo
+        
+        Alert.alert("Success", "Profile photo updated!");
+      }
+    } catch (error) {
+      console.error(error);
+      Alert.alert("Error", "Could not upload photo.");
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
+  const handleDeletePhoto = async () => {
+    setUploadingImage(true);
+    try {
+      // 1. Remove from Firebase Auth Profile (Use null to properly clear it)
+      await auth().currentUser.updateProfile({ photoURL: null });
+      
+      // 2. Try to delete the file from Storage to save space
+      try {
+        const reference = storage().ref(`profile_photos/${user.uid}.jpg`);
+        await reference.delete();
+      } catch (e) {
+        // It's fine if this fails (e.g., if they didn't have a photo stored there)
+      }
+
+      setLocalPhoto(null); // Instantly remove photo from screen
+      Alert.alert("Success", "Profile photo removed!");
+    } catch (error) {
+      console.error(error);
+      Alert.alert("Error", "Could not remove photo.");
+    } finally {
+      setUploadingImage(false);
+    }
+  };
 
   const handleSignOut = async () => {
     Alert.alert(
@@ -70,7 +154,6 @@ const SettingsScreen = () => {
           onPress: async () => {
             try {
               await auth().signOut();
-              // AuthContext will automatically redirect to Login
             } catch (error) {
               console.error(error);
               Alert.alert("Error", "Failed to sign out.");
@@ -82,9 +165,13 @@ const SettingsScreen = () => {
   };
 
   const handleShareFamily = async () => {
+    if (!familyDoc?.inviteCode) {
+        Alert.alert("Error", "Invite code not found.");
+        return;
+    }
     try {
       await Share.share({
-        message: `Join my family on FamilyHub! Use this Family ID to join: ${familyId}`,
+        message: `Join my family on FamilyHub! Use this 6-digit Invite Code: ${familyDoc.inviteCode}`,
       });
     } catch (error) {
       Alert.alert("Error", "Could not share.");
@@ -93,7 +180,6 @@ const SettingsScreen = () => {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Settings</Text>
       </View>
@@ -102,13 +188,21 @@ const SettingsScreen = () => {
         
         {/* Profile Card */}
         <View style={styles.profileCard}>
-          <View style={styles.avatarContainer}>
-            {user?.photoURL ? (
-              <Image source={{ uri: user.photoURL }} style={styles.avatar} />
-            ) : (
-              <User size={40} color={COLORS.white} />
-            )}
-          </View>
+          <TouchableOpacity style={styles.avatarWrapper} onPress={handleAvatarPress}>
+            <View style={styles.avatarContainer}>
+              {uploadingImage ? (
+                <ActivityIndicator color={COLORS.white} />
+              ) : localPhoto ? (
+                <Image source={{ uri: localPhoto }} style={styles.avatar} />
+              ) : (
+                <User size={40} color={COLORS.white} />
+              )}
+            </View>
+            <View style={styles.cameraIconBadge}>
+               <Camera size={14} color={COLORS.white} />
+            </View>
+          </TouchableOpacity>
+          
           <View>
             <Text style={styles.profileName}>{user?.displayName || 'Family Member'}</Text>
             <Text style={styles.profileEmail}>{user?.email}</Text>
@@ -121,14 +215,14 @@ const SettingsScreen = () => {
           <SettingItem 
             icon={Users} 
             label="Family Name" 
-            value={familyName || "My Family"} 
+            value={familyDoc?.familyName || "My Family"} 
             showChevron={false}
           />
           <View style={styles.divider} />
           <SettingItem 
             icon={Share2} 
             label="Invite Member" 
-            value="Share ID" 
+            value={`Code: ${familyDoc?.inviteCode || '---'}`} 
             onPress={handleShareFamily}
           />
         </View>
@@ -162,7 +256,7 @@ const SettingsScreen = () => {
           />
         </View>
 
-        <Text style={styles.footerText}>FamilyHub for {familyName}</Text>
+        <Text style={styles.footerText}>FamilyHub for {familyDoc?.familyName || 'Family'}</Text>
       </ScrollView>
     </View>
   );
@@ -178,7 +272,6 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 32, fontWeight: 'bold', color: COLORS.text_dark },
   content: { padding: SPACING.lg },
   
-  // Profile Card
   profileCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -189,16 +282,32 @@ const styles = StyleSheet.create({
     shadowColor: "#000", shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05, shadowRadius: 4, elevation: 2,
   },
+  avatarWrapper: {
+    marginRight: SPACING.md,
+    position: 'relative'
+  },
   avatarContainer: {
     width: 60, height: 60, borderRadius: 30, backgroundColor: COLORS.primary,
-    justifyContent: 'center', alignItems: 'center', marginRight: SPACING.md,
+    justifyContent: 'center', alignItems: 'center',
     overflow: 'hidden'
   },
   avatar: { width: '100%', height: '100%' },
+  cameraIconBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    backgroundColor: COLORS.text_dark,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: COLORS.white
+  },
   profileName: { fontSize: FONT_SIZES.lg, fontWeight: 'bold', color: COLORS.text_dark },
   profileEmail: { fontSize: FONT_SIZES.sm, color: COLORS.text_light },
 
-  // Sections
   sectionHeader: { 
     fontSize: FONT_SIZES.sm, fontWeight: 'bold', color: COLORS.text_light, 
     marginBottom: SPACING.sm, marginLeft: SPACING.xs, textTransform: 'uppercase' 
@@ -213,7 +322,6 @@ const styles = StyleSheet.create({
   },
   divider: { height: 1, backgroundColor: COLORS.border, marginLeft: 50 },
   
-  // Items
   itemContainer: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingVertical: 16, paddingHorizontal: SPACING.md,

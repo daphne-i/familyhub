@@ -8,6 +8,8 @@ import {
   TextInput,
   Image,
   ActivityIndicator,
+  Modal,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -18,8 +20,11 @@ import {
   Plus,
   Heart,
   Clock,
-  Utensils
+  Utensils,
+  Link as LinkIcon,
+  X
 } from 'lucide-react-native';
+import functions from '@react-native-firebase/functions'; // <-- Added Functions Import
 import * as theme from '../../utils/theme';
 import { useFamilyCollection } from '../../services/firestore';
 import { DEFAULT_RECIPE_CATEGORIES } from '../../constants';
@@ -45,7 +50,6 @@ const RecipeHeader = ({ onSearch, searchValue }) => {
         </TouchableOpacity>
       </View>
       
-      {/* Search Bar */}
       <View style={styles.searchContainer}>
         <Search size={20} color={COLORS.text_light} style={styles.searchIcon} />
         <TextInput
@@ -64,7 +68,7 @@ const FilterPills = ({ selectedFilter, onSelect }) => {
   const filters = [
     { id: 'all', name: 'All', icon: Utensils },
     { id: 'recent', name: 'Most Recent', icon: Clock },
-    ...DEFAULT_RECIPE_CATEGORIES // e.g. Favorites, Spicy, etc.
+    ...DEFAULT_RECIPE_CATEGORIES
   ];
 
   return (
@@ -76,7 +80,6 @@ const FilterPills = ({ selectedFilter, onSelect }) => {
       contentContainerStyle={styles.filterList}
       renderItem={({ item }) => {
         const isSelected = selectedFilter === item.id;
-        // Determine if icon is a string (emoji) or Component (Lucide)
         const IconComponent = typeof item.icon === 'string' ? null : item.icon;
         
         return (
@@ -117,13 +120,12 @@ const RecipeCard = ({ recipe, onPress }) => {
       <View style={styles.cardContent}>
         <Text style={styles.recipeTitle} numberOfLines={1}>{recipe.title}</Text>
         <View style={styles.cardMetaRow}>
-          {recipe.cookTime && (
+          {recipe.cookTime ? (
             <View style={styles.metaItem}>
               <Clock size={12} color={COLORS.text_light} />
               <Text style={styles.metaText}>{recipe.cookTime}</Text>
             </View>
-          )}
-          {/* We could show rating or calories here */}
+          ) : null}
         </View>
       </View>
       
@@ -136,6 +138,55 @@ const RecipeCard = ({ recipe, onPress }) => {
   );
 };
 
+// --- NEW URL Import Modal ---
+const URLImportModal = ({ visible, onClose, onExtract, extracting }) => {
+  const [url, setUrl] = useState('');
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Import Recipe</Text>
+            <TouchableOpacity onPress={onClose} disabled={extracting}>
+              <X size={24} color={COLORS.text_dark} />
+            </TouchableOpacity>
+          </View>
+           <Text style={styles.modalSubtitle}>Paste a website link to instantly extract the ingredients and steps.</Text>
+           
+           <View style={styles.urlInputContainer}>
+             <LinkIcon size={20} color={COLORS.text_light} style={{marginRight: 10}} />
+             <TextInput
+               style={styles.urlInput}
+               value={url}
+               onChangeText={setUrl}
+               placeholder="https://www.foodnetwork.com/..."
+               placeholderTextColor={COLORS.text_light}
+               autoCapitalize="none"
+               autoCorrect={false}
+               editable={!extracting}
+             />
+           </View>
+
+           <TouchableOpacity 
+             onPress={() => {
+               if(url) onExtract(url);
+             }} 
+             style={[styles.saveButton, !url && { opacity: 0.5 }]}
+             disabled={!url || extracting}
+           >
+             {extracting ? (
+               <ActivityIndicator color={COLORS.white} />
+             ) : (
+               <Text style={styles.saveButtonText}>Extract Recipe</Text>
+             )}
+           </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
 // --- Main Screen ---
 
 const RecipeBoxScreen = () => {
@@ -144,28 +195,28 @@ const RecipeBoxScreen = () => {
   
   const [searchText, setSearchText] = useState('');
   const [activeFilter, setActiveFilter] = useState('all');
+  
+  // Modals state
   const [isAddModalVisible, setAddModalVisible] = useState(false);
+  const [isUrlModalVisible, setUrlModalVisible] = useState(false);
+  const [isExtracting, setIsExtracting] = useState(false);
 
   // Filter Logic
   const filteredRecipes = useMemo(() => {
     let result = recipes || [];
 
-    // 1. Search Text
     if (searchText) {
       result = result.filter(r => 
         r.title?.toLowerCase().includes(searchText.toLowerCase())
       );
     }
 
-    // 2. Category Filter
     if (activeFilter !== 'all') {
       if (activeFilter === 'recent') {
-        // Just sort by date (already sorted by default usually, but we ensure it)
         result.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
       } else if (activeFilter === 'favorites') {
         result = result.filter(r => r.isFavorite);
       } else {
-        // Check if recipe has this categoryId
         result = result.filter(r => r.categoryIds?.includes(activeFilter));
       }
     }
@@ -180,10 +231,32 @@ const RecipeBoxScreen = () => {
 
   const handleWebCreate = () => {
     setAddModalVisible(false);
-    // For MVP, we'll just go to EditRecipe but maybe with a "paste url" step later.
-    // Or we can create a dedicated WebImportScreen. 
-    // Let's re-use EditRecipe for now, user can paste link in description.
-    navigation.navigate('EditRecipe', { mode: 'create', isWeb: true });
+    // Open the URL prompt instead of going directly to EditRecipe
+    setTimeout(() => setUrlModalVisible(true), 300); 
+  };
+
+  const handleExtractRecipe = async (url) => {
+    try {
+      setIsExtracting(true);
+      
+      // Call your Firebase Cloud Function!
+      const result = await functions().httpsCallable('extractRecipe')({ url });
+      const scrapedData = result.data;
+
+      setIsExtracting(false);
+      setUrlModalVisible(false);
+
+      // Pass the extracted data to the EditRecipe screen so you can review it before saving!
+      navigation.navigate('EditRecipe', { mode: 'create', isWeb: true, scrapedData });
+      
+    } catch (error) {
+      setIsExtracting(false);
+      console.error(error);
+      Alert.alert(
+        "Extraction Failed", 
+        "Could not automatically read this website. Please try adding it manually, or try a different site."
+      );
+    }
   };
 
   return (
@@ -228,169 +301,59 @@ const RecipeBoxScreen = () => {
         onSelectManual={handleManualCreate}
         onSelectWeb={handleWebCreate}
       />
+
+      <URLImportModal
+        visible={isUrlModalVisible}
+        onClose={() => setUrlModalVisible(false)}
+        onExtract={handleExtractRecipe}
+        extracting={isExtracting}
+      />
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background_white,
-  },
-  header: {
-    backgroundColor: COLORS.white,
-    paddingHorizontal: SPACING.lg,
-    paddingBottom: SPACING.md,
-  },
-  headerTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: SPACING.md,
-  },
-  headerTitle: {
-    fontSize: FONT_SIZES.xl,
-    fontWeight: 'bold',
-    color: COLORS.text_dark,
-  },
-  iconButton: {
-    padding: SPACING.xs,
-  },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.background_light,
-    borderRadius: RADII.md,
-    paddingHorizontal: SPACING.md,
-    height: 44,
-  },
-  searchIcon: {
-    marginRight: SPACING.sm,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: FONT_SIZES.md,
-    color: COLORS.text_dark,
-  },
-  filterContainer: {
-    backgroundColor: COLORS.white,
-    paddingBottom: SPACING.md,
-  },
-  filterList: {
-    paddingHorizontal: SPACING.lg,
-  },
-  pill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: SPACING.md,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: COLORS.background_light,
-    marginRight: SPACING.sm,
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  pillSelected: {
-    backgroundColor: COLORS.primary,
-  },
-  pillIcon: {
-    marginRight: 6,
-  },
-  pillEmoji: {
-    marginRight: 6,
-    fontSize: 14,
-  },
-  pillText: {
-    fontSize: FONT_SIZES.sm,
-    fontWeight: '600',
-    color: COLORS.text_dark,
-  },
-  pillTextSelected: {
-    color: COLORS.white,
-  },
-  listContent: {
-    padding: SPACING.lg,
-  },
-  card: {
-    flexDirection: 'row',
-    backgroundColor: COLORS.white,
-    borderRadius: RADII.md,
-    marginBottom: SPACING.md,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    height: 80,
-  },
-  cardImage: {
-    width: 80,
-    height: 80,
-  },
-  cardPlaceholder: {
-    backgroundColor: COLORS.orange_light,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  cardContent: {
-    flex: 1,
-    padding: SPACING.md,
-    justifyContent: 'center',
-  },
-  recipeTitle: {
-    fontSize: FONT_SIZES.md,
-    fontWeight: 'bold',
-    color: COLORS.text_dark,
-    marginBottom: SPACING.xs,
-  },
-  cardMetaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  metaItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: SPACING.md,
-  },
-  metaText: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.text_light,
-    marginLeft: 4,
-  },
-  favBadge: {
-    position: 'absolute',
-    top: 4,
-    left: 4,
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    borderRadius: 12,
-    padding: 4,
-  },
-  centered: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 50,
-  },
-  emptyText: {
-    fontSize: FONT_SIZES.lg,
-    fontWeight: 'bold',
-    color: COLORS.text_dark,
-    marginTop: SPACING.md,
-  },
-  emptySubtext: {
-    fontSize: FONT_SIZES.md,
-    color: COLORS.text_light,
-  },
-  fab: {
-    position: 'absolute',
-    bottom: SPACING.xl,
-    right: SPACING.xl,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: COLORS.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 8,
-  },
+  container: { flex: 1, backgroundColor: COLORS.background_white },
+  header: { backgroundColor: COLORS.white, paddingHorizontal: SPACING.lg, paddingBottom: SPACING.md },
+  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: SPACING.md },
+  headerTitle: { fontSize: FONT_SIZES.xl, fontWeight: 'bold', color: COLORS.text_dark },
+  iconButton: { padding: SPACING.xs },
+  searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.background_light, borderRadius: RADII.md, paddingHorizontal: SPACING.md, height: 44 },
+  searchIcon: { marginRight: SPACING.sm },
+  searchInput: { flex: 1, fontSize: FONT_SIZES.md, color: COLORS.text_dark },
+  filterContainer: { backgroundColor: COLORS.white, paddingBottom: SPACING.md },
+  filterList: { paddingHorizontal: SPACING.lg },
+  pill: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: SPACING.md, paddingVertical: 8, borderRadius: 20, backgroundColor: COLORS.background_light, marginRight: SPACING.sm, borderWidth: 1, borderColor: 'transparent' },
+  pillSelected: { backgroundColor: COLORS.primary },
+  pillIcon: { marginRight: 6 },
+  pillEmoji: { marginRight: 6, fontSize: 14 },
+  pillText: { fontSize: FONT_SIZES.sm, fontWeight: '600', color: COLORS.text_dark },
+  pillTextSelected: { color: COLORS.white },
+  listContent: { padding: SPACING.lg },
+  card: { flexDirection: 'row', backgroundColor: COLORS.white, borderRadius: RADII.md, marginBottom: SPACING.md, overflow: 'hidden', borderWidth: 1, borderColor: COLORS.border, height: 80 },
+  cardImage: { width: 80, height: 80 },
+  cardPlaceholder: { backgroundColor: COLORS.orange_light, justifyContent: 'center', alignItems: 'center' },
+  cardContent: { flex: 1, padding: SPACING.md, justifyContent: 'center' },
+  recipeTitle: { fontSize: FONT_SIZES.md, fontWeight: 'bold', color: COLORS.text_dark, marginBottom: SPACING.xs },
+  cardMetaRow: { flexDirection: 'row', alignItems: 'center' },
+  metaItem: { flexDirection: 'row', alignItems: 'center', marginRight: SPACING.md },
+  metaText: { fontSize: FONT_SIZES.sm, color: COLORS.text_light, marginLeft: 4 },
+  favBadge: { position: 'absolute', top: 4, left: 4, backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: 12, padding: 4 },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center', marginTop: 50 },
+  emptyText: { fontSize: FONT_SIZES.lg, fontWeight: 'bold', color: COLORS.text_dark, marginTop: SPACING.md },
+  emptySubtext: { fontSize: FONT_SIZES.md, color: COLORS.text_light },
+  fab: { position: 'absolute', bottom: SPACING.xl, right: SPACING.xl, width: 60, height: 60, borderRadius: 30, backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center', elevation: 8 },
+  
+  // NEW Modal Styles
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: SPACING.lg },
+  modalContainer: { backgroundColor: COLORS.white, borderRadius: RADII.lg, padding: SPACING.xl },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: SPACING.md },
+  modalTitle: { fontSize: FONT_SIZES.lg, fontWeight: 'bold', color: COLORS.text_dark },
+  modalSubtitle: { fontSize: FONT_SIZES.md, color: COLORS.text_light, marginBottom: SPACING.lg },
+  urlInputContainer: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: COLORS.border, borderRadius: RADII.md, paddingHorizontal: SPACING.md, marginBottom: SPACING.xl },
+  urlInput: { flex: 1, paddingVertical: SPACING.md, fontSize: FONT_SIZES.md },
+  saveButton: { backgroundColor: COLORS.primary, padding: SPACING.md, borderRadius: RADII.md, alignItems: 'center' },
+  saveButtonText: { color: COLORS.white, fontWeight: 'bold', fontSize: FONT_SIZES.md },
 });
 
 export default RecipeBoxScreen;

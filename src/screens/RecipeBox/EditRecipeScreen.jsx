@@ -21,7 +21,8 @@ import {
   Camera, 
   XCircle,
   ListPlus,
-  ChevronDown 
+  ChevronDown,
+  Link as LinkIcon
 } from 'lucide-react-native';
 import { launchImageLibrary } from 'react-native-image-picker';
 import storage from '@react-native-firebase/storage';
@@ -42,18 +43,24 @@ const EditRecipeScreen = () => {
   const { familyId } = useFamily();
   const { user } = useAuth();
   
-  // Destructure initial params
-  const { mode, recipe } = route.params || {}; 
+  // Destructure initial params (including scrapedData from the Web Import!)
+  const { mode, recipe, scrapedData } = route.params || {}; 
 
   const [loading, setLoading] = useState(false);
-  const [title, setTitle] = useState(recipe?.title || '');
-  const [description, setDescription] = useState(recipe?.description || '');
-  const [cookTime, setCookTime] = useState(recipe?.cookTime || '');
-  const [servings, setServings] = useState(recipe?.servings || '');
-  const [photoUrl, setPhotoUrl] = useState(recipe?.photoUrl || null);
   
-  // Initialize Ingredients safely
-  const initialIngredients = (recipe?.ingredients || []).map(ing => {
+  // --- Auto-fill states with either existing Recipe data OR Web Scraped data ---
+  const [title, setTitle] = useState(recipe?.title || scrapedData?.title || '');
+  const [description, setDescription] = useState(recipe?.description || scrapedData?.description || '');
+  const [cookTime, setCookTime] = useState(recipe?.cookTime || scrapedData?.cookTime || '');
+  const [servings, setServings] = useState(recipe?.servings || scrapedData?.servings || '');
+  const [photoUrl, setPhotoUrl] = useState(recipe?.photoUrl || scrapedData?.photoUrl || null);
+  const [sourceUrl, setSourceUrl] = useState(recipe?.sourceUrl || scrapedData?.sourceUrl || '');
+  
+  // Initialize Ingredients safely. 
+  // Note: Web scrapers usually return a raw string like "2 cups flour". 
+  // We put the whole string into the 'name' field and let the user format it if they want.
+  const rawIngredients = recipe?.ingredients || scrapedData?.ingredients || [];
+  const initialIngredients = rawIngredients.map(ing => {
     if (typeof ing === 'string') {
       return { name: ing, qty: '', unit: 'no' };
     }
@@ -61,7 +68,7 @@ const EditRecipeScreen = () => {
   });
 
   const [ingredients, setIngredients] = useState(initialIngredients);
-  const [instructions, setInstructions] = useState(recipe?.instructions || []);
+  const [instructions, setInstructions] = useState(recipe?.instructions || scrapedData?.instructions || []);
   const [categoryIds, setCategoryIds] = useState(recipe?.categoryIds || []);
 
   // Unit Picker State
@@ -125,11 +132,9 @@ const EditRecipeScreen = () => {
     }
   };
 
-  // --- THE FIX: Pass a callback function ---
   const handleEditInstructions = () => {
     navigation.navigate('EditInstructions', { 
       currentInstructions: instructions,
-      // Pass this function to the next screen
       onSave: (newInstructions) => {
         setInstructions(newInstructions);
       }
@@ -160,6 +165,7 @@ const EditRecipeScreen = () => {
         cookTime,
         servings,
         photoUrl,
+        sourceUrl, // Save the URL if it came from the web
         ingredients: cleanIngredients,
         instructions,
         categoryIds,
@@ -269,6 +275,20 @@ const EditRecipeScreen = () => {
           </View>
         </View>
 
+        {/* Source URL Field (Handy if they want to manually paste a link or review the scraped link) */}
+        <Text style={styles.label}>Source Link</Text>
+        <View style={styles.urlContainer}>
+          <LinkIcon size={18} color={COLORS.text_light} style={{ marginRight: 8 }} />
+          <TextInput
+            style={[styles.input, { flex: 1, borderBottomWidth: 0, height: 'auto', paddingVertical: 0 }]}
+            placeholder="https://..."
+            placeholderTextColor={COLORS.text_light}
+            value={sourceUrl}
+            onChangeText={setSourceUrl}
+            autoCapitalize="none"
+          />
+        </View>
+
         {/* Categories */}
         <Text style={styles.label}>Categories</Text>
         <View style={styles.tagsContainer}>
@@ -303,7 +323,7 @@ const EditRecipeScreen = () => {
               placeholderTextColor={COLORS.text_light}
               value={ing.qty}
               onChangeText={(t) => updateIngredient(index, 'qty', t)}
-              keyboardType="numeric"
+              keyboardType="numbers-and-punctuation"
             />
             <TouchableOpacity 
               style={styles.unitButton} 
@@ -318,6 +338,7 @@ const EditRecipeScreen = () => {
               placeholderTextColor={COLORS.text_light}
               value={ing.name}
               onChangeText={(t) => updateIngredient(index, 'name', t)}
+              multiline
             />
             <TouchableOpacity onPress={() => removeIngredient(index)} style={styles.removeBtn}>
               <XCircle size={20} color={COLORS.text_light} />
@@ -371,10 +392,11 @@ const styles = StyleSheet.create({
   photoPlaceholder: { alignItems: 'center' },
   photoText: { color: COLORS.text_light, marginTop: SPACING.sm, fontSize: FONT_SIZES.sm },
   label: { fontSize: FONT_SIZES.sm, fontWeight: '600', color: COLORS.text_dark, marginBottom: SPACING.xs, marginTop: SPACING.md },
-  input: { borderBottomWidth: 1, borderBottomColor: COLORS.border, paddingVertical: SPACING.sm, fontSize: FONT_SIZES.md, color: COLORS.text_dark, height: 40 },
+  input: { borderBottomWidth: 1, borderBottomColor: COLORS.border, paddingVertical: SPACING.sm, fontSize: FONT_SIZES.md, color: COLORS.text_dark, minHeight: 40 },
   textArea: { height: 80, textAlignVertical: 'top' },
+  urlContainer: { flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: COLORS.border, paddingVertical: SPACING.sm },
   row: { flexDirection: 'row' },
-  tagsContainer: { flexDirection: 'row', flexWrap: 'wrap' },
+  tagsContainer: { flexDirection: 'row', flexWrap: 'wrap', marginTop: SPACING.xs },
   tag: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, borderWidth: 1, borderColor: COLORS.border, marginRight: 8, marginBottom: 8 },
   tagSelected: { backgroundColor: COLORS.primary_light, borderColor: COLORS.primary },
   tagText: { fontSize: FONT_SIZES.sm, color: COLORS.text },
@@ -385,7 +407,7 @@ const styles = StyleSheet.create({
   qtyInput: { width: 50, textAlign: 'center', marginRight: SPACING.sm },
   unitButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.background_light, paddingHorizontal: SPACING.sm, paddingVertical: 8, borderRadius: RADII.sm, marginRight: SPACING.sm, minWidth: 60, justifyContent: 'space-between' },
   unitText: { fontSize: FONT_SIZES.sm, color: COLORS.text_dark, marginRight: 4 },
-  nameInput: { flex: 1 },
+  nameInput: { flex: 1, paddingVertical: 0 }, // Adjust padding for multiline
   removeBtn: { padding: SPACING.sm, marginLeft: SPACING.xs },
   addItemButton: { flexDirection: 'row', alignItems: 'center', marginTop: SPACING.sm, paddingVertical: SPACING.sm },
   addItemText: { fontSize: FONT_SIZES.md, color: COLORS.text_dark, fontWeight: '500' },
