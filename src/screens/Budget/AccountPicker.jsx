@@ -10,45 +10,38 @@ import {
 } from 'react-native';
 import { X, Plus } from 'lucide-react-native';
 import * as theme from '../../utils/theme';
-import {
-  DEFAULT_EXPENSE_CATEGORIES,
-  DEFAULT_INCOME_CATEGORIES,
-} from '../../constants';
-// 1. Re-import Firestore hooks
-import { useFamilyCollection, addBudgetCategory } from '../../services/firestore';
+
+import { useFamilyCollection, addBudgetAccount } from '../../services/firestore';
 import { useFamily } from '../../hooks/useFamily';
 import CreateBudgetEntityModal from './CreateBudgetEntityModal';
 
 const { COLORS, FONT_SIZES, SPACING, RADII } = theme;
 
-const BudgetCategoryPicker = ({
-  visible,
-  onClose,
-  onSelect,
-  type, // 'Expense' or 'Income'
-}) => {
+// Default Accounts List
+const DEFAULT_ACCOUNTS = [
+  { id: 'cash', name: 'Cash', icon: '💵' },
+  { id: 'bank', name: 'Bank Account', icon: '🏦' },
+  { id: 'credit', name: 'Credit Card', icon: '💳' },
+  { id: 'savings', name: 'Savings', icon: '🐷' },
+];
+
+const AccountPicker = ({ visible, onClose, onSelect }) => {
   const { familyId } = useFamily();
-  // 2. Fetch custom categories
-  const { data: customCategories } = useFamilyCollection('budgetCategories');
+  const { data: customAccounts } = useFamilyCollection('budgetAccounts');
   const [isCreateModalVisible, setCreateModalVisible] = useState(false);
 
-  // 3. Merge Defaults + Custom
+  // Merge Defaults + Custom Accounts
   const data = useMemo(() => {
-    const defaults = type === 'Income' ? DEFAULT_INCOME_CATEGORIES : DEFAULT_EXPENSE_CATEGORIES;
-    
-    // Filter custom categories by type (if you implemented type saving for custom ones)
-    const relevantCustom = customCategories ? customCategories.filter(c => !c.type || c.type === type) : [];
-
     return [
-      ...defaults,
-      ...relevantCustom,
-      { id: 'new', name: 'New', icon: 'plus' } // Button at the end
+      ...DEFAULT_ACCOUNTS,
+      ...(customAccounts || []),
+      { id: 'new', name: 'New', icon: 'plus' } 
     ];
-  }, [type, customCategories]);
+  }, [customAccounts]);
 
-  const handleCreate = async (newCategory) => {
+  const handleCreate = async (newAccount) => {
     try {
-      await addBudgetCategory(familyId, newCategory);
+      await addBudgetAccount(familyId, newAccount);
     } catch (e) {
       console.error(e);
     }
@@ -86,9 +79,7 @@ const BudgetCategoryPicker = ({
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>
-            Pick a {type ? type.toLowerCase() : 'category'}
-          </Text>
+          <Text style={styles.headerTitle}>Pick an Account</Text>
           <TouchableOpacity onPress={onClose} style={styles.closeButton}>
             <X size={24} color={COLORS.primary} />
           </TouchableOpacity>
@@ -101,13 +92,12 @@ const BudgetCategoryPicker = ({
           contentContainerStyle={styles.listContent}
         />
 
-        {/* 4. Restore the Modal */}
         <CreateBudgetEntityModal 
             visible={isCreateModalVisible}
             onClose={() => setCreateModalVisible(false)}
             onSave={handleCreate}
-            title={`New ${type} Category`}
-            entityType={type}
+            title="New Account"
+            entityType="Account"
         />
       </SafeAreaView>
     </Modal>
@@ -168,4 +158,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default BudgetCategoryPicker;
+export default AccountPicker;

@@ -18,22 +18,16 @@ export const useDashboard = () => {
   useEffect(() => {
     if (!user || !familyId) return;
 
-    console.log(`Dashboard: Fetching for ${familyId}`);
-
-    const todayStart = startOfDay(new Date());
-    const todayEnd = endOfDay(new Date());
+    // 1. Convert JS Dates to Firestore Timestamps for accurate querying
+    const todayStart = firestore.Timestamp.fromDate(startOfDay(new Date()));
+    const todayEnd = firestore.Timestamp.fromDate(endOfDay(new Date()));
     const currentMonth = format(new Date(), 'yyyy-MM');
 
-    // FIX 4: Convert JS Dates to Firestore Timestamps for accurate querying
-    const startTimestamp = firestore.Timestamp.fromDate(todayStart);
-    const endTimestamp = firestore.Timestamp.fromDate(todayEnd);
-
-    // 1. Listen to Today's Events
-    // FIX 1: Changed 'calendar_events' to 'calendar' to match firestore.js
+    // 2. Listen to Today's Events
     const eventsUnsub = firestore()
-      .collection(`families/${familyId}/calendar`)
-      .where('startTime', '>=', startTimestamp) 
-      .where('startTime', '<=', endTimestamp)
+      .collection(`families/${familyId}/calendar_events`)
+      .where('startTime', '>=', todayStart) 
+      .where('startTime', '<=', todayEnd)
       .onSnapshot(
         snap => {
           const events = [];
@@ -50,11 +44,11 @@ export const useDashboard = () => {
         err => console.error("Events Error:", err)
       );
 
-    // 2. Listen to Today's Meal Plan
+    // 3. Listen to Today's Meal Plan
     const mealsUnsub = firestore()
       .collection(`families/${familyId}/mealPlan`)
-      .where('date', '>=', startTimestamp)
-      .where('date', '<=', endTimestamp)
+      .where('date', '>=', todayStart)
+      .where('date', '<=', todayEnd)
       .onSnapshot(
         snap => {
           const meals = [];
@@ -66,18 +60,17 @@ export const useDashboard = () => {
         err => console.error("Meals Error:", err)
       );
 
-    // 3. Listen to Current Month Budget
-    // FIX 2: Changed 'budgets' to 'budget' to match firestore.js
+    // 4. Listen to Current Month Budget
+    // (Fixed to match firestore.js logic 'budget' collection and 'totalLimit')
     const budgetUnsub = firestore()
-      .collection(`families/${familyId}/budget`)
+      .collection(`families/${familyId}/budgets`)
       .doc(currentMonth)
       .onSnapshot(
         doc => {
           if (doc && doc.exists) {
             const b = doc.data() || {};
             const spent = b.totalSpent || 0;
-            // FIX 3: Changed 'monthlyLimit' to 'totalLimit' to match firestore.js
-            const limit = b.totalLimit || 0; 
+            const limit = b.monthlyLimit || 0; 
             
             setData(prev => ({ 
               ...prev, 
