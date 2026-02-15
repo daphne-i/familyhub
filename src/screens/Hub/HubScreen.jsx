@@ -23,6 +23,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import * as theme from '../../utils/theme';
 // 1. IMPORT THE HOOK
 import { useFamilyCollection } from '../../services/firestore';
+import { useDashboard } from '../../hooks/useDashboard';
 
 const { COLORS, FONT_SIZES, SPACING, RADII } = theme;
 
@@ -66,21 +67,51 @@ const HubScreen = () => {
   const navigation = useNavigation();
   // 2. FETCH THE LISTS DATA
   const { data: lists, loading: loadingLists } = useFamilyCollection('lists');
+  const { data: folders, loading: loadingFolders } = useFamilyCollection('docFolders');
+  const { data: recipes, loading: loadingRecipes } = useFamilyCollection('recipes');
+  const { events, todaysMeals, loading: loadingDashboard } = useDashboard();
   // We can add other collections here as we build them
 
   // 3. CALCULATE PENDING ITEMS
-  // We calculate this once at the top
-  const totalPendingItems = useMemo(() => {
-    if (!lists) return 0;
-    // Sum up 'pendingItemCount' from all lists
-    return lists.reduce((sum, list) => sum + (list.pendingItemCount || 0), 0);
-  }, [lists]);
-
   const getPendingText = () => {
     if (loadingLists) return 'Loading...';
+    const totalPendingItems = lists?.reduce((sum, list) => sum + (list.pendingItemCount || 0), 0) || 0;
     if (totalPendingItems === 0) return 'No pending items';
     if (totalPendingItems === 1) return '1 pending item';
     return `${totalPendingItems} pending items`;
+  };
+
+  const getDocumentsText = () => {
+    if (loadingFolders) return 'Loading...';
+    if (!folders || folders.length === 0) return '0 folders';
+    
+    const folderCount = folders.length;
+    // Sum up the fileCount from every folder (which we just fixed in firestore.js!)
+    const fileCount = folders.reduce((sum, f) => sum + (f.fileCount || 0), 0);
+    
+    let text = `${folderCount} folder${folderCount !== 1 ? 's' : ''}`;
+    if (fileCount > 0) {
+      text += ` • ${fileCount} file${fileCount !== 1 ? 's' : ''}`;
+    }
+    return text;
+  };
+
+  const getRecipesText = () => {
+    if (loadingRecipes) return 'Loading...';
+    if (!recipes || recipes.length === 0) return 'No recipes yet';
+    return `${recipes.length} recipe${recipes.length !== 1 ? 's' : ''}`;
+  };
+
+  const getCalendarText = () => {
+    if (loadingDashboard) return 'Loading...';
+    if (!events || events.length === 0) return 'No events today';
+    return `${events.length} event${events.length !== 1 ? 's' : ''} today`;
+  };
+
+  const getMealsText = () => {
+    if (loadingDashboard) return 'Loading...';
+    if (!todaysMeals || todaysMeals.length === 0) return 'No meals planned today';
+    return `${todaysMeals.length} meal${todaysMeals.length !== 1 ? 's' : ''} today`;
   };
 
   return (
@@ -102,7 +133,7 @@ const HubScreen = () => {
           {/* Calendar */}
           <HubTile
             title="Calendar"
-            subtitle="2 events today" // static
+            subtitle={getCalendarText()}
             icon={<CalendarDays size={30} color={COLORS.green} />}
             iconBgColor={COLORS.green_light}
             onPress={() => navigation.push('Calendar')}
@@ -118,7 +149,7 @@ const HubScreen = () => {
           {/* Documents */}
           <HubTile
             title="Documents"
-            subtitle="4 folders 1 file" // static
+            subtitle={getDocumentsText()}
             icon={<Folder size={30} color={COLORS.orange} />}
             iconBgColor={COLORS.orange_light}
             onPress={() => navigation.push('Documents')}
@@ -128,7 +159,7 @@ const HubScreen = () => {
           {/* Meals */}
           <HubTile
             title="Meals"
-            subtitle="1 meal this week" // static
+            subtitle={getMealsText()}
             icon={<Utensils size={30} color={COLORS.blue} />}
             iconBgColor={COLORS.blue_light}
             onPress={() => navigation.push('MealPlanner')}
@@ -136,7 +167,7 @@ const HubScreen = () => {
           {/* Recipes */}
           <HubTile
             title="Recipes"
-            subtitle="7 recipes" // static
+            subtitle={getRecipesText()}
             icon={<Soup size={30} color={COLORS.orange} />}
             iconBgColor={COLORS.orange_light}
             onPress={() => navigation.push('RecipeBox')}

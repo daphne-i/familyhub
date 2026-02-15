@@ -64,31 +64,43 @@ const FamilyProvider = ({ children }) => {
     const familySub = firestore()
       .collection('families')
       .doc(familyId)
-      .onSnapshot((doc) => {
-        if (doc.exists) {
-          setFamilyDoc({ id: doc.id, ...doc.data() });
+      .onSnapshot(
+        (doc) => {
+          if (doc.exists) {
+            // FIX: Safely extract data so doc.data() is never undefined
+            const data = doc.data() || {};
+            setFamilyDoc({ id: doc.id, ...data });
 
-          const memberIds = doc.data().members || [];
-          if (memberIds.length > 0) {
-            const membersSub = firestore()
-              .collection('users')
-              .where(firestore.FieldPath.documentId(), 'in', memberIds)
-              .onSnapshot((querySnapshot) => {
-                const members = [];
-                querySnapshot.forEach((userDoc) => {
-                  members.push({ id: userDoc.id, ...userDoc.data() });
+            // FIX: Safely look for members
+            const memberIds = data.members || [];
+            if (memberIds.length > 0) {
+              const membersSub = firestore()
+                .collection('users')
+                .where(firestore.FieldPath.documentId(), 'in', memberIds)
+                .onSnapshot((querySnapshot) => {
+                  const members = [];
+                  querySnapshot.forEach((userDoc) => {
+                    members.push({ id: userDoc.id, ...userDoc.data() });
+                  });
+                  setMembersList(members);
                 });
-                setMembersList(members);
-              });
-            return () => membersSub();
+              return () => membersSub();
+            } else {
+              setMembersList([]);
+            }
           } else {
+            // FIX: If the family doc was deleted, reset everything
+            // This will tell the RootNavigator to send them to the Onboarding Screen
+            console.log('[FamilyContext] Family doc not found! Resetting state.');
+            setFamilyDoc(null);
             setMembersList([]);
+            setFamilyId(null);
           }
-        } else {
-          setFamilyDoc(null);
-          setMembersList([]);
+        },
+        (error) => {
+          console.error('[FamilyContext] Error fetching family doc:', error);
         }
-      });
+      );
 
     return () => familySub();
   }, [familyId]);
